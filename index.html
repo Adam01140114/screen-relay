@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screen Relay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  /* Layout: home = two side-by-side choices; TV = full-bleed dark screen with a giant code; sharing = one status panel */
+  :root {
+    --bg: #eef0f3; --surface: #ffffff; --fg: #15191f; --muted: #5c6673;
+    --line: #d5dae1; --accent: #2a5bd7; --accent-fg: #ffffff;
+    --live: #d93a2b; --ok: #1d8a52; --warn: #a86500;
+    --tv-bg: #0b0e13; --tv-fg: #f2f4f7; --tv-muted: #8b95a3; --tv-line: #232933;
+    --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+    --body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --surface: #181c22; --fg: #e8ebef; --muted: #96a0ad;
+      --line: #2a3039; --accent: #6b93f5; --accent-fg: #0b1020;
+      --live: #f0614f; --ok: #44c486; --warn: #e3a440; color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--body); }
+  [hidden] { display: none !important; }
+
+  button { font: 500 1rem var(--body); border-radius: 8px; padding: 12px 18px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  button.danger { background: transparent; color: var(--live); border-color: var(--live); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .note { color: var(--muted); font-size: 0.9rem; margin: 0; }
+  .note.ok { color: var(--ok); }
+  .note.warn { color: var(--warn); }
+  .label { font: 500 0.72rem var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+  /* ---------- Home ---------- */
+  .wrap { max-width: 920px; margin: 0 auto; padding: 40px 16px; display: grid; gap: 28px; }
+  h1 { font: 700 clamp(1.8rem, 5vw, 2.6rem)/1.05 var(--display); margin: 0; letter-spacing: -0.02em; }
+  .lede { margin: 6px 0 0; color: var(--muted); max-width: 52ch; }
+  .choices { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .choices { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+  .card h2 { font: 600 1.25rem/1.2 var(--display); margin: 0; }
+  .code-input { width: 100%; font: 600 clamp(1.8rem, 7vw, 2.4rem) var(--mono); letter-spacing: 0.3em; text-transform: uppercase; text-align: center; padding: 12px 8px 12px calc(8px + 0.3em); border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+  .code-input::placeholder { color: var(--line); }
+  .card .primary { width: 100%; }
+  .error { color: var(--live); font-size: 0.9rem; margin: 0; min-height: 1.35em; }
+
+  /* ---------- Sharing (computer) ---------- */
+  .share-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px; display: grid; gap: 14px; }
+  .share-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .share-head h2 { font: 600 1.35rem/1.2 var(--display); margin: 0; }
+  .share-head .tvcode { font-family: var(--mono); letter-spacing: 0.12em; }
+  .preview { width: 100%; max-height: 50vh; background: #000; border-radius: 8px; display: block; object-fit: contain; aspect-ratio: 16 / 9; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; font: 500 0.78rem var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+  .pill[data-state="live"] { color: var(--live); }
+  .pill[data-state="live"] .dot { background: var(--live); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+
+  /* ---------- TV ---------- */
+  #tv { position: fixed; inset: 0; background: var(--tv-bg); color: var(--tv-fg); display: grid; }
+  #tv .waiting { display: grid; grid-template-columns: auto auto; gap: clamp(32px, 6vw, 96px); align-items: center; justify-content: center; padding: 32px; }
+  @media (max-aspect-ratio: 1/1) { #tv .waiting { grid-template-columns: 1fr; justify-items: center; text-align: center; } }
+  #tv .eyebrow { font: 500 clamp(0.9rem, 1.6vw, 1.3rem) var(--mono); text-transform: uppercase; letter-spacing: 0.14em; color: var(--tv-muted); }
+  #tv .big-code { font: 600 clamp(4rem, 13vw, 11rem)/1 var(--mono); letter-spacing: 0.12em; margin: 10px 0 18px; font-variant-numeric: tabular-nums; }
+  #tv .howto { font-size: clamp(1rem, 1.9vw, 1.6rem); color: var(--tv-muted); margin: 0; max-width: 30ch; }
+  #tv .howto strong { color: var(--tv-fg); font-weight: 500; }
+  #tv .qr { background: #fff; padding: 16px; border-radius: 14px; line-height: 0; }
+  #tv .qr img, #tv .qr canvas { width: clamp(150px, 22vw, 280px) !important; height: auto !important; }
+  #tv .tv-status { position: absolute; left: 24px; bottom: 20px; font: 500 0.85rem var(--mono); color: var(--tv-muted); letter-spacing: 0.04em; }
+  #tv video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  #tv .tv-controls { position: absolute; right: 20px; bottom: 20px; display: flex; gap: 10px; transition: opacity 0.3s; }
+  #tv.idle-cursor { cursor: none; }
+  #tv.idle-cursor .tv-controls.autohide { opacity: 0; }
+  #tv .tv-controls button { background: rgba(0,0,0,0.6); color: #fff; border-color: rgba(255,255,255,0.25); font-size: 0.9rem; padding: 9px 14px; }
+  #tv .tv-controls button.sound { background: #fff; color: #0b0e13; border-color: #fff; font-weight: 600; }
+  @media (prefers-reduced-motion: reduce) { .pill .dot { animation: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- ===== Home: pick a role ===== -->
+<div class="wrap" id="home">
+  <header>
+    <h1>Screen Relay</h1>
+    <p class="lede">Put your computer screen on the TV. Open this page on the TV to get a code, then type that code here on your computer.</p>
+  </header>
+  <div class="choices">
+    <form class="card" id="joinForm" autocomplete="off">
+      <span class="label">On your computer</span>
+      <h2>Share my screen</h2>
+      <label class="note" for="codeInput">Enter the code shown on the TV</label>
+      <input class="code-input" id="codeInput" maxlength="5" placeholder="ABCDE" spellcheck="false" autocapitalize="characters">
+      <button class="primary" type="submit" id="shareBtn">Share screen</button>
+      <p class="error" id="joinError" role="alert"></p>
+    </form>
+    <div class="card">
+      <span class="label">On the TV</span>
+      <h2>Show a screen here</h2>
+      <p class="note">This device gets a room code and a QR code, then shows whatever you share to it, with sound.</p>
+      <button id="tvBtn">Use this device as the TV</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Computer: sharing to a TV ===== -->
+<div class="wrap" id="sharing" hidden>
+  <section class="share-panel">
+    <div class="share-head">
+      <h2>Sharing to TV <span class="tvcode" id="shareCode"></span></h2>
+      <span class="pill" id="sharePill" data-state="idle"><span class="dot"></span><span id="shareState">Connecting…</span></span>
+    </div>
+    <video class="preview" id="preview" autoplay playsinline muted></video>
+    <p class="note" id="audioNote"></p>
+    <div><button class="danger" id="stopBtn">Stop sharing</button></div>
+    <p class="note">Keep this tab open while you share. Tip: share a different window or tab than this one to avoid a screen-inside-a-screen effect.</p>
+  </section>
+</div>
+
+<!-- ===== TV: show the code, then the stream ===== -->
+<div id="tv" hidden>
+  <div class="waiting" id="tvWaiting">
+    <div>
+      <div class="eyebrow">Room code</div>
+      <div class="big-code" id="tvCode">·····</div>
+      <p class="howto">On your computer, go to <strong id="tvUrl"></strong> and enter this code.</p>
+    </div>
+    <div class="qr" id="qr" aria-label="QR code for the share page"></div>
+  </div>
+  <video id="tvVideo" autoplay playsinline hidden></video>
+  <div class="tv-status" id="tvStatus">Getting a code…</div>
+  <div class="tv-controls" id="tvControls">
+    <button id="soundBtn" class="sound" hidden>Turn on sound</button>
+    <button id="fsBtn">Full screen</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const PREFIX = "screenrelay-tv-";
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I, O, 0, 1
+const CODE_LEN = 5;
+const $ = (id) => document.getElementById(id);
+const baseUrl = location.origin + location.pathname;
+const prettyUrl = (location.host + location.pathname).replace(/\/$/, "");
+
+function show(view) {
+  for (const id of ["home", "sharing", "tv"]) $(id).hidden = id !== view;
+}
+const validCode = (c) => c.length === CODE_LEN && [...c].every((ch) => CODE_CHARS.includes(ch));
+function newCode() {
+  let s = "";
+  for (const b of crypto.getRandomValues(new Uint8Array(CODE_LEN))) s += CODE_CHARS[b % CODE_CHARS.length];
+  return s;
+}
+function store(key, val) { try { val == null ? localStorage.removeItem(key) : localStorage.setItem(key, val); } catch {} }
+function load(key) { try { return localStorage.getItem(key); } catch { return null; } }
+
+/* =============== Computer: share to a TV =============== */
+let stream = null, sendPeer = null, sendCall = null, sendConn = null;
+const canShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+
+function setShareState(state, text) {
+  $("sharePill").dataset.state = state;
+  $("shareState").textContent = text;
+}
+
+async function startShare(code) {
+  $("joinError").textContent = "";
+  if (!canShare) {
+    $("joinError").textContent = "This device can't share its screen. Open " + prettyUrl + " on a computer (Chrome, Edge, Firefox or Safari).";
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 30 },
+      // Raw computer sound: no voice-call processing, which muffles music and video.
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false },
+      systemAudio: "include",
+    });
+  } catch {
+    $("joinError").textContent = "Screen sharing was cancelled. Click Share screen and choose what to show.";
+    return;
+  }
+
+  show("sharing");
+  $("shareCode").textContent = code;
+  $("preview").srcObject = stream;
+  setShareState("idle", "Connecting…");
+  const hasSound = stream.getAudioTracks().length > 0;
+  $("audioNote").className = "note " + (hasSound ? "ok" : "warn");
+  $("audioNote").textContent = hasSound
+    ? "Sound is being shared."
+    : "No sound is being shared. To include it, stop and share again. In the picker, choose a Chrome tab and turn on “Also share tab audio”, or choose Entire Screen and turn on “Also share system audio” if it appears.";
+  stream.getVideoTracks()[0].addEventListener("ended", () => stopShare());
+
+  sendPeer = new Peer();
+  sendPeer.on("open", () => {
+    const target = PREFIX + code;
+    sendConn = sendPeer.connect(target, { reliable: true });
+    sendCall = sendPeer.call(target, stream);
+    sendCall.on("close", () => { if (stream) stopShare("The TV disconnected."); });
+    const pc = sendCall.peerConnection;
+    if (pc) pc.addEventListener("connectionstatechange", () => {
+      if (pc.connectionState === "connected") setShareState("live", "Live on TV");
+      if (pc.connectionState === "failed") stopShare("Couldn't reach the TV. Make sure both devices are online and try again.");
+    });
+  });
+  sendPeer.on("error", (err) => {
+    if (err.type === "peer-unavailable") stopShare("No TV is showing code " + code + ". Check the code on the TV and try again.");
+    else if (["network", "server-error", "socket-error", "browser-incompatible"].includes(err.type)) stopShare("Connection problem. Check your internet and try again.");
+    else console.error(err);
+  });
+}
+
+function stopShare(errorText) {
+  try { sendConn && sendConn.open && sendConn.send("bye"); } catch {}
+  const peer = sendPeer;
+  setTimeout(() => peer && peer.destroy(), 300);
+  sendPeer = sendCall = sendConn = null;
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = null;
+  $("preview").srcObject = null;
+  show("home");
+  $("joinError").textContent = errorText || "";
+}
+
+$("codeInput").addEventListener("input", (e) => {
+  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, CODE_LEN);
+  $("joinError").textContent = "";
+});
+$("joinForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const code = $("codeInput").value.trim().toUpperCase();
+  if (!validCode(code)) {
+    $("joinError").textContent = "Enter the 5-character code shown on the TV.";
+    $("codeInput").focus();
+    return;
+  }
+  startShare(code);
+});
+$("stopBtn").onclick = () => stopShare();
+
+/* =============== TV: wait for a computer to share =============== */
+let tvPeer = null, tvCall = null, tvCode = null, tvRetries = 0, wakeLock = null;
+const tvVideo = $("tvVideo");
+
+function startTv() {
+  show("tv");
+  history.replaceState(null, "", "#tv"); // bookmark-friendly: reopening goes straight to TV mode
+  $("tvUrl").textContent = prettyUrl;
+  keepAwake();
+  tvCode = load("screenrelay-tv-code") || newCode(); // reuse the code across reloads
+  openTvPeer();
+}
+
+function openTvPeer() {
+  $("tvCode").textContent = tvCode;
+  $("tvStatus").textContent = "Getting ready…";
+  const qrEl = $("qr");
+  qrEl.textContent = "";
+  if (window.QRCode) new QRCode(qrEl, { text: baseUrl + "#" + tvCode, width: 280, height: 280, correctLevel: QRCode.CorrectLevel.M });
+
+  tvPeer = new Peer(PREFIX + tvCode);
+  tvPeer.on("open", () => {
+    tvRetries = 0;
+    store("screenrelay-tv-code", tvCode);
+    $("tvStatus").textContent = "Ready. Waiting for a computer to share.";
+  });
+  tvPeer.on("call", (call) => {
+    if (tvCall) tvCall.close();
+    tvCall = call;
+    call.answer();
+    call.on("stream", (s) => playOnTv(s));
+    call.on("close", () => { if (tvCall === call) endTvStream(); });
+    const pc = call.peerConnection;
+    if (pc) pc.addEventListener("connectionstatechange", () => {
+      if (tvCall === call && ["failed", "closed"].includes(pc.connectionState)) endTvStream();
+    });
+  });
+  tvPeer.on("connection", (conn) => conn.on("data", (d) => { if (d === "bye") endTvStream(); }));
+  tvPeer.on("disconnected", () => { if (!tvPeer.destroyed) tvPeer.reconnect(); });
+  tvPeer.on("error", (err) => {
+    if (err.type === "unavailable-id") {
+      // The code may still be held from a moment ago; wait and retry, then pick a new one.
+      tvPeer.destroy();
+      if (++tvRetries > 3) { tvCode = newCode(); tvRetries = 0; }
+      $("tvStatus").textContent = "Reconnecting…";
+      setTimeout(openTvPeer, 2500);
+    } else if (["network", "server-error", "socket-error"].includes(err.type)) {
+      $("tvStatus").textContent = "Can't reach the internet. Retrying…";
+      tvPeer.destroy();
+      setTimeout(openTvPeer, 4000);
+    } else if (err.type !== "peer-unavailable") {
+      console.error(err);
+    }
+  });
+}
+
+function playOnTv(s) {
+  tvVideo.srcObject = s;
+  tvVideo.hidden = false;
+  $("tvWaiting").hidden = true;
+  $("tvStatus").hidden = true;
+  $("tvControls").classList.add("autohide");
+  const hasSound = s.getAudioTracks().length > 0;
+  tvVideo.muted = false;
+  tvVideo.play().then(() => { $("soundBtn").hidden = true; }).catch(() => {
+    // Browser blocked sound until someone interacts; play muted and offer a button.
+    tvVideo.muted = true;
+    tvVideo.play().catch(() => {});
+    $("soundBtn").hidden = !hasSound;
+  });
+}
+
+function endTvStream() {
+  tvCall = null;
+  tvVideo.srcObject = null;
+  tvVideo.hidden = true;
+  $("tvWaiting").hidden = false;
+  $("tvStatus").hidden = false;
+  $("soundBtn").hidden = true;
+  $("tvControls").classList.remove("autohide");
+  $("tvStatus").textContent = "Sharing ended. Waiting for a computer to share.";
+}
+
+async function keepAwake() {
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !$("tv").hidden) keepAwake();
+});
+
+$("tvBtn").onclick = () => {
+  document.documentElement.requestFullscreen?.().catch(() => {});
+  startTv();
+};
+$("fsBtn").onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.().catch(() => {});
+};
+$("soundBtn").onclick = () => {
+  tvVideo.muted = false;
+  tvVideo.play().catch(() => {});
+  $("soundBtn").hidden = true;
+};
+// Hide the cursor and buttons on the TV after a few seconds without movement.
+let idleTimer;
+$("tv").addEventListener("pointermove", () => {
+  $("tv").classList.remove("idle-cursor");
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => $("tv").classList.add("idle-cursor"), 3000);
+});
+
+/* =============== Pick a view from the URL =============== */
+const hash = location.hash.slice(1).toUpperCase();
+if (hash === "TV") {
+  startTv();
+} else {
+  show("home");
+  if (validCode(hash)) {
+    $("codeInput").value = hash; // arrived from the TV's QR code
+    if (!canShare) $("joinError").textContent = "Phones can't share their screen. Open " + prettyUrl + " on your computer and enter " + hash + ".";
+    else $("shareBtn").focus();
+  } else {
+    $("codeInput").focus();
+  }
+  if (!canShare && !validCode(hash)) {
+    $("joinError").textContent = "This device can't share its screen, but it can be the TV.";
+  }
+}
+</script>
+</body>
+</html>
