@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: screen-relay
-    runtime: static
-    staticPublishPath: .
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: no-cache
