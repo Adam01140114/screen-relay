@@ -152,6 +152,34 @@ const CODE_LEN = 5;
 // "slot" of the code, and the computer calls every slot.
 const SLOTS = 4;
 const slotId = (code, i) => PREFIX + code + (i ? "-" + i : "");
+
+// Quality: a shared movie should look and sound like one, not like a video call.
+const VIDEO_MAX_BITRATE = 8000000;  // 8 Mbps: sharp full-HD on home Wi-Fi
+const AUDIO_MAX_BITRATE = 256000;
+// Opus in stereo at a high bitrate, instead of WebRTC's voice-call default (mono, ~32 kbps).
+// Both ends add this to their side of the connection, so the sender sends stereo.
+function hiFiAudio(sdp) {
+  const m = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
+  if (!m) return sdp;
+  return sdp.replace(new RegExp("a=fmtp:" + m[1] + " ([^\\r\\n]*)"), (line, params) => "a=fmtp:" + m[1] + " "
+    + params.split(";").filter((p) => p && !/^(stereo|sprop-stereo|maxaveragebitrate)=/.test(p))
+        .concat(["stereo=1", "sprop-stereo=1", "maxaveragebitrate=510000"]).join(";"));
+}
+// Lets the computer's sender use far more bandwidth than the browser's default allows.
+function boostSender(pc) {
+  for (const sender of pc.getSenders()) {
+    if (!sender.track) continue;
+    const params = sender.getParameters();
+    if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+    if (sender.track.kind === "video") {
+      params.encodings[0].maxBitrate = VIDEO_MAX_BITRATE;
+      params.encodings[0].maxFramerate = 30;
+    } else {
+      params.encodings[0].maxBitrate = AUDIO_MAX_BITRATE;
+    }
+    sender.setParameters(params).catch(() => {});
+  }
+}
 const $ = (id) => document.getElementById(id);
 const baseUrl = location.origin + location.pathname;
 const prettyUrl = (location.host + location.pathname).replace(/\/$/, "");
@@ -188,7 +216,7 @@ async function startShare(code) {
   }
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 30 },
+      video: { frameRate: 30, width: { ideal: 1920 }, height: { ideal: 1080 } },
       // Raw computer sound: no voice-call processing, which muffles music and video.
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false },
       systemAudio: "include",
@@ -208,6 +236,8 @@ async function startShare(code) {
     ? "Sound is being shared."
     : "No sound is being shared. To include it, stop and share again. In the picker, choose a Chrome tab and turn on “Also share tab audio”, or choose Entire Screen and turn on “Also share system audio” if it appears.";
   stream.getVideoTracks()[0].addEventListener("ended", () => stopShare());
+  // A movie: keep the motion smooth rather than optimising for sharp still text.
+  try { stream.getVideoTracks()[0].contentHint = "motion"; } catch {}
 
   // Calls every screen on that room code, and keeps calling the empty slots every few
   // seconds, so a TV (or phone) can open the room before, during or after sharing starts.
@@ -227,12 +257,12 @@ async function startShare(code) {
     const v = { live: false };
     viewers.set(target, v);
     v.conn = sendPeer.connect(target, { reliable: true });
-    v.call = sendPeer.call(target, stream);
+    v.call = sendPeer.call(target, stream, { sdpTransform: hiFiAudio });
     v.timer = setTimeout(() => { if (!v.live) drop(target, v); }, 15000);  // nobody answered
     v.call.on("close", () => drop(target, v));
     const pc = v.call.peerConnection;
     if (pc) pc.addEventListener("connectionstatechange", () => {
-      if (pc.connectionState === "connected") { v.live = true; refreshState(); }
+      if (pc.connectionState === "connected") { v.live = true; refreshState(); boostSender(pc); }
       if (["failed", "closed"].includes(pc.connectionState)) drop(target, v);
     });
   }
@@ -349,7 +379,7 @@ function openTvPeer() {
   tvPeer.on("call", (call) => {
     if (tvCall) tvCall.close();
     tvCall = call;
-    call.answer();
+    call.answer(undefined, { sdpTransform: hiFiAudio });
     call.on("stream", (s) => playOnTv(s));
     call.on("close", () => { if (tvCall === call) endTvStream(); });
     const pc = call.peerConnection;
