@@ -148,6 +148,10 @@
 const PREFIX = "screenrelay-tv-";
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I, O, 0, 1
 const CODE_LEN = 5;
+// Several screens can watch one room (e.g. the TV and a phone): each takes the first free
+// "slot" of the code, and the computer calls every slot.
+const SLOTS = 4;
+const slotId = (code, i) => PREFIX + code + (i ? "-" + i : "");
 const $ = (id) => document.getElementById(id);
 const baseUrl = location.origin + location.pathname;
 const prettyUrl = (location.host + location.pathname).replace(/\/$/, "");
@@ -167,7 +171,8 @@ function store(key, val) { try { val == null ? localStorage.removeItem(key) : lo
 function load(key) { try { return localStorage.getItem(key); } catch { return null; } }
 
 /* =============== Computer: share to a TV =============== */
-let stream = null, sendPeer = null, sendCall = null, sendConn = null;
+let stream = null, sendPeer = null, retryTimer = null;
+const viewers = new Map();  // slot peer id -> { call, conn, live, timer }
 const canShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
 
 function setShareState(state, text) {
@@ -204,30 +209,65 @@ async function startShare(code) {
     : "No sound is being shared. To include it, stop and share again. In the picker, choose a Chrome tab and turn on “Also share tab audio”, or choose Entire Screen and turn on “Also share system audio” if it appears.";
   stream.getVideoTracks()[0].addEventListener("ended", () => stopShare());
 
-  sendPeer = new Peer();
-  sendPeer.on("open", () => {
-    const target = PREFIX + code;
-    sendConn = sendPeer.connect(target, { reliable: true });
-    sendCall = sendPeer.call(target, stream);
-    sendCall.on("close", () => { if (stream) stopShare("The TV disconnected."); });
-    const pc = sendCall.peerConnection;
+  // Calls every screen on that room code, and keeps calling the empty slots every few
+  // seconds, so a TV (or phone) can open the room before, during or after sharing starts.
+  function refreshState() {
+    const live = [...viewers.values()].filter((v) => v.live).length;
+    if (live) setShareState("live", live > 1 ? "Live on " + live + " screens" : "Live on TV");
+    else setShareState("idle", "Waiting for a TV on code " + code + "…");
+  }
+  function drop(target, v) {
+    if (viewers.get(target) !== v) return;
+    viewers.delete(target);
+    clearTimeout(v.timer);
+    try { v.call.close(); } catch {}
+    refreshState();
+  }
+  function callSlot(target) {
+    const v = { live: false };
+    viewers.set(target, v);
+    v.conn = sendPeer.connect(target, { reliable: true });
+    v.call = sendPeer.call(target, stream);
+    v.timer = setTimeout(() => { if (!v.live) drop(target, v); }, 15000);  // nobody answered
+    v.call.on("close", () => drop(target, v));
+    const pc = v.call.peerConnection;
     if (pc) pc.addEventListener("connectionstatechange", () => {
-      if (pc.connectionState === "connected") setShareState("live", "Live on TV");
-      if (pc.connectionState === "failed") stopShare("Couldn't reach the TV. Make sure both devices are online and try again.");
+      if (pc.connectionState === "connected") { v.live = true; refreshState(); }
+      if (["failed", "closed"].includes(pc.connectionState)) drop(target, v);
     });
-  });
+  }
+  function callAll() {
+    retryTimer = null;
+    if (!stream || !sendPeer || sendPeer.destroyed) return;
+    for (let i = 0; i < SLOTS; i++) if (!viewers.has(slotId(code, i))) callSlot(slotId(code, i));
+    retryTimer = setTimeout(callAll, 4000);
+  }
+
+  sendPeer = new Peer();
+  sendPeer.on("open", callAll);
   sendPeer.on("error", (err) => {
-    if (err.type === "peer-unavailable") stopShare("No TV is showing code " + code + ". Check the code on the TV and try again.");
+    if (err.type === "peer-unavailable") {
+      // Nobody on that slot (yet); callAll tries it again shortly.
+      const target = String(err.message || "").split(" ").pop();
+      if (viewers.has(target)) drop(target, viewers.get(target));
+      else refreshState();
+    }
     else if (["network", "server-error", "socket-error", "browser-incompatible"].includes(err.type)) stopShare("Connection problem. Check your internet and try again.");
     else console.error(err);
   });
 }
 
 function stopShare(errorText) {
-  try { sendConn && sendConn.open && sendConn.send("bye"); } catch {}
+  clearTimeout(retryTimer);
+  retryTimer = null;
+  for (const v of viewers.values()) {
+    clearTimeout(v.timer);
+    try { v.conn && v.conn.open && v.conn.send("bye"); } catch {}
+  }
+  viewers.clear();
   const peer = sendPeer;
   setTimeout(() => peer && peer.destroy(), 300);
-  sendPeer = sendCall = sendConn = null;
+  sendPeer = null;
   if (stream) stream.getTracks().forEach((t) => t.stop());
   stream = null;
   $("preview").srcObject = null;
@@ -252,7 +292,7 @@ $("joinForm").addEventListener("submit", (e) => {
 $("stopBtn").onclick = () => stopShare();
 
 /* =============== TV: wait for a computer to share =============== */
-let tvPeer = null, tvCall = null, tvCode = null, tvFixed = false, tvRetries = 0, wakeLock = null;
+let tvPeer = null, tvCall = null, tvCode = null, tvFixed = false, tvSlot = 0, tvRetries = 0, wakeLock = null;
 const tvVideo = $("tvVideo");
 
 function startTv(fixedCode) {
@@ -273,7 +313,7 @@ function openTvPeer() {
   qrEl.textContent = "";
   if (window.QRCode) new QRCode(qrEl, { text: baseUrl + "#" + tvCode, width: 280, height: 280, correctLevel: QRCode.CorrectLevel.M });
 
-  tvPeer = new Peer(PREFIX + tvCode);
+  tvPeer = new Peer(slotId(tvCode, tvSlot));
   tvPeer.on("open", () => {
     tvRetries = 0;
     if (!tvFixed) store("screenrelay-tv-code", tvCode);
@@ -294,12 +334,19 @@ function openTvPeer() {
   tvPeer.on("disconnected", () => { if (!tvPeer.destroyed) tvPeer.reconnect(); });
   tvPeer.on("error", (err) => {
     if (err.type === "unavailable-id") {
-      // The code may still be held from a moment ago; wait and retry, then pick a new one.
       tvPeer.destroy();
-      // A fixed room code (#tv=1234) is never swapped for another; keep retrying it.
-      if (++tvRetries > 3 && !tvFixed) { tvCode = newCode(); tvRetries = 0; }
-      $("tvStatus").textContent = "Reconnecting…";
-      setTimeout(openTvPeer, 2500);
+      if (tvFixed) {
+        // A fixed room code (#tv=1234) is never swapped: another screen is already watching
+        // it, so take the next free slot of the same room (going round again if all are busy).
+        tvSlot = (tvSlot + 1) % SLOTS;
+        $("tvStatus").textContent = "Joining room " + tvCode + "…";
+        setTimeout(openTvPeer, tvSlot ? 300 : 2500);
+      } else {
+        // The code may still be held from a moment ago; wait and retry, then pick a new one.
+        if (++tvRetries > 3) { tvCode = newCode(); tvRetries = 0; }
+        $("tvStatus").textContent = "Reconnecting…";
+        setTimeout(openTvPeer, 2500);
+      }
     } else if (["network", "server-error", "socket-error"].includes(err.type)) {
       $("tvStatus").textContent = "Can't reach the internet. Retrying…";
       tvPeer.destroy();
