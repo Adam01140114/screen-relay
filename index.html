@@ -237,24 +237,51 @@ async function startShare(code) {
     });
   }
   function callAll() {
+    clearTimeout(retryTimer);
     retryTimer = null;
     if (!stream || !sendPeer || sendPeer.destroyed) return;
-    for (let i = 0; i < SLOTS; i++) if (!viewers.has(slotId(code, i))) callSlot(slotId(code, i));
+    if (!sendPeer.disconnected)  // while reconnecting to the server, new calls can't be placed
+      for (let i = 0; i < SLOTS; i++) if (!viewers.has(slotId(code, i))) callSlot(slotId(code, i));
     retryTimer = setTimeout(callAll, 4000);
   }
 
-  sendPeer = new Peer();
-  sendPeer.on("open", callAll);
-  sendPeer.on("error", (err) => {
+  // The server only introduces screens to each other; once connected, the video flows
+  // directly. So losing the server (it drops idle connections, and the network blips) never
+  // stops the share: screens already watching keep going while it reconnects.
+  let reconnectTimer = null;
+  function reconnect() {
+    reconnectTimer = null;
+    if (!stream || !sendPeer) return;
+    if (sendPeer.destroyed) { stream && startPeer(); return; }
+    if (sendPeer.disconnected) {
+      try { sendPeer.reconnect(); } catch {}
+      reconnectTimer = setTimeout(reconnect, 5000);  // check again; "open" ends this once it's back
+    }
+  }
+
+  function startPeer() {
+    sendPeer = new Peer();
+    sendPeer.on("open", () => { clearTimeout(reconnectTimer); reconnectTimer = null; refreshState(); callAll(); });
+    sendPeer.on("disconnected", () => { if (!reconnectTimer) reconnectTimer = setTimeout(reconnect, 1000); });
+    sendPeer.on("error", onPeerError);
+  }
+
+  function onPeerError(err) {
     if (err.type === "peer-unavailable") {
       // Nobody on that slot (yet); callAll tries it again shortly.
       const target = String(err.message || "").split(" ").pop();
       if (viewers.has(target)) drop(target, viewers.get(target));
       else refreshState();
     }
-    else if (["network", "server-error", "socket-error", "browser-incompatible"].includes(err.type)) stopShare("Connection problem. Check your internet and try again.");
+    else if (["network", "server-error", "socket-error", "disconnected"].includes(err.type)) {
+      if (![...viewers.values()].some((v) => v.live)) setShareState("idle", "Reconnecting…");
+      if (!reconnectTimer) reconnectTimer = setTimeout(reconnect, 3000);
+    }
+    else if (err.type === "browser-incompatible") stopShare("This browser can't share to the TV.");
     else console.error(err);
-  });
+  }
+
+  startPeer();
 }
 
 function stopShare(errorText) {
@@ -348,6 +375,13 @@ function openTvPeer() {
         setTimeout(openTvPeer, 2500);
       }
     } else if (["network", "server-error", "socket-error"].includes(err.type)) {
+      if (tvCall) {
+        // Already watching: the video doesn't need the server, so keep it playing and
+        // just reconnect to the server in the background.
+        const peer = tvPeer;
+        setTimeout(() => { if (peer === tvPeer && peer.disconnected && !peer.destroyed) try { peer.reconnect(); } catch {} }, 4000);
+        return;
+      }
       $("tvStatus").textContent = "Can't reach the internet. Retrying…";
       tvPeer.destroy();
       setTimeout(openTvPeer, 4000);
@@ -366,10 +400,16 @@ function playOnTv(s) {
   const hasSound = s.getAudioTracks().length > 0;
   tvVideo.muted = false;
   tvVideo.play().then(() => { $("soundBtn").hidden = true; }).catch(() => {
-    // Browser blocked sound until someone interacts; play muted and offer a button.
+    // Browser blocked sound until someone interacts; play muted, offer a button, and turn
+    // sound on at the first tap anywhere.
     tvVideo.muted = true;
     tvVideo.play().catch(() => {});
     $("soundBtn").hidden = !hasSound;
+    if (hasSound) document.addEventListener("pointerdown", () => {
+      if (!tvVideo.muted) return;
+      tvVideo.muted = false;
+      tvVideo.play().then(() => { $("soundBtn").hidden = true; }).catch(() => { tvVideo.muted = true; });
+    }, { once: true, capture: true });
   });
 }
 
