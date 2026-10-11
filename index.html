@@ -97,7 +97,7 @@
       <span class="label">On your computer</span>
       <h2>Share my screen</h2>
       <label class="note" for="codeInput">Enter the code shown on the TV</label>
-      <input class="code-input" id="codeInput" maxlength="5" placeholder="ABCDE" spellcheck="false" autocapitalize="characters">
+      <input class="code-input" id="codeInput" maxlength="6" placeholder="ABCDE" spellcheck="false" autocapitalize="characters">
       <button class="primary" type="submit" id="shareBtn">Share screen</button>
       <p class="error" id="joinError" role="alert"></p>
     </form>
@@ -155,7 +155,9 @@ const prettyUrl = (location.host + location.pathname).replace(/\/$/, "");
 function show(view) {
   for (const id of ["home", "sharing", "tv"]) $(id).hidden = id !== view;
 }
-const validCode = (c) => c.length === CODE_LEN && [...c].every((ch) => CODE_CHARS.includes(ch));
+// Codes the TV makes up are 5 characters from CODE_CHARS; a fixed room code (#tv=1234) can be
+// any 4 to 6 letters or digits.
+const validCode = (c) => /^[A-Z0-9]{4,6}$/.test(c);
 function newCode() {
   let s = "";
   for (const b of crypto.getRandomValues(new Uint8Array(CODE_LEN))) s += CODE_CHARS[b % CODE_CHARS.length];
@@ -234,14 +236,14 @@ function stopShare(errorText) {
 }
 
 $("codeInput").addEventListener("input", (e) => {
-  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, CODE_LEN);
+  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
   $("joinError").textContent = "";
 });
 $("joinForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const code = $("codeInput").value.trim().toUpperCase();
   if (!validCode(code)) {
-    $("joinError").textContent = "Enter the 5-character code shown on the TV.";
+    $("joinError").textContent = "Enter the code shown on the TV.";
     $("codeInput").focus();
     return;
   }
@@ -250,15 +252,17 @@ $("joinForm").addEventListener("submit", (e) => {
 $("stopBtn").onclick = () => stopShare();
 
 /* =============== TV: wait for a computer to share =============== */
-let tvPeer = null, tvCall = null, tvCode = null, tvRetries = 0, wakeLock = null;
+let tvPeer = null, tvCall = null, tvCode = null, tvFixed = false, tvRetries = 0, wakeLock = null;
 const tvVideo = $("tvVideo");
 
-function startTv() {
+function startTv(fixedCode) {
   show("tv");
-  history.replaceState(null, "", "#tv"); // bookmark-friendly: reopening goes straight to TV mode
+  // bookmark-friendly: reopening goes straight to TV mode (with the same fixed room code, if any)
+  history.replaceState(null, "", fixedCode ? "#tv=" + fixedCode : "#tv");
   $("tvUrl").textContent = prettyUrl;
   keepAwake();
-  tvCode = load("screenrelay-tv-code") || newCode(); // reuse the code across reloads
+  tvFixed = !!fixedCode;
+  tvCode = fixedCode || load("screenrelay-tv-code") || newCode(); // reuse the code across reloads
   openTvPeer();
 }
 
@@ -272,7 +276,7 @@ function openTvPeer() {
   tvPeer = new Peer(PREFIX + tvCode);
   tvPeer.on("open", () => {
     tvRetries = 0;
-    store("screenrelay-tv-code", tvCode);
+    if (!tvFixed) store("screenrelay-tv-code", tvCode);
     $("tvStatus").textContent = "Ready. Waiting for a computer to share.";
   });
   tvPeer.on("call", (call) => {
@@ -292,7 +296,8 @@ function openTvPeer() {
     if (err.type === "unavailable-id") {
       // The code may still be held from a moment ago; wait and retry, then pick a new one.
       tvPeer.destroy();
-      if (++tvRetries > 3) { tvCode = newCode(); tvRetries = 0; }
+      // A fixed room code (#tv=1234) is never swapped for another; keep retrying it.
+      if (++tvRetries > 3 && !tvFixed) { tvCode = newCode(); tvRetries = 0; }
       $("tvStatus").textContent = "Reconnecting…";
       setTimeout(openTvPeer, 2500);
     } else if (["network", "server-error", "socket-error"].includes(err.type)) {
@@ -362,8 +367,11 @@ $("tv").addEventListener("pointermove", () => {
 
 /* =============== Pick a view from the URL =============== */
 const hash = location.hash.slice(1).toUpperCase();
+const fixedRoom = hash.match(/^TV=([A-Z0-9]{4,6})$/);
 if (hash === "TV") {
   startTv();
+} else if (fixedRoom) {
+  startTv(fixedRoom[1]); // #tv=1234: this TV always uses room code 1234
 } else {
   show("home");
   if (validCode(hash)) {
