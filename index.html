@@ -172,6 +172,8 @@ function boostSender(pc) {
     const params = sender.getParameters();
     if (!params.encodings || !params.encodings.length) params.encodings = [{}];
     if (sender.track.kind === "video") {
+      // When bandwidth is short, drop frames rather than resolution: a blurry movie is worse.
+      params.degradationPreference = "maintain-resolution";
       params.encodings[0].maxBitrate = VIDEO_MAX_BITRATE;
       params.encodings[0].maxFramerate = 30;
     } else {
@@ -236,8 +238,9 @@ async function startShare(code) {
     ? "Sound is being shared."
     : "No sound is being shared. To include it, stop and share again. In the picker, choose a Chrome tab and turn on “Also share tab audio”, or choose Entire Screen and turn on “Also share system audio” if it appears.";
   stream.getVideoTracks()[0].addEventListener("ended", () => stopShare());
-  // A movie: keep the motion smooth rather than optimising for sharp still text.
-  try { stream.getVideoTracks()[0].contentHint = "motion"; } catch {}
+  // Keep the picture sharp. ("motion" let Chrome shrink the capture itself while a new
+  // connection's bandwidth estimate was still ramping up, and it stayed tiny afterwards.)
+  try { stream.getVideoTracks()[0].contentHint = "detail"; } catch {}
 
   // Calls every screen on that room code, and keeps calling the empty slots every few
   // seconds, so a TV (or phone) can open the room before, during or after sharing starts.
