@@ -87,8 +87,14 @@
   html.simple #runcmd { margin-top: 22px; background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   html.simple h1 { margin-bottom: 12px; }
 
+  .now-playing { display: grid; gap: 4px; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .now-playing[hidden] { display: none; }
+  .now-playing label { margin: 8px 0 4px; font-size: 13px; }
+  .now-playing select { width: 100%; padding: 10px; font: inherit; font-size: 16px; }
+  .np-pair { gap: 10px; }
   .watch-share { display: grid; gap: 8px; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
   .watch-share[hidden] { display: none; }
+  .bad-text { color: var(--bad); }
   .watch-share-label { font-weight: 600; }
   .watch-lan { display: grid; gap: 8px; margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--border); }
   .watch-lan[hidden] { display: none; }
@@ -273,6 +279,20 @@
     <div class="watch-buttons">
       <button id="watch-sound">Turn on sound</button>
       <button id="watch-fs" class="primary">Fullscreen</button>
+    </div>
+    <div class="now-playing" id="now-playing" hidden>
+      <span class="watch-share-label" id="np-title">Now playing</span>
+      <div class="pair np-pair">
+        <div>
+          <label for="np-season">Season</label>
+          <select id="np-season"></select>
+        </div>
+        <div>
+          <label for="np-episode">Episode</label>
+          <select id="np-episode"></select>
+        </div>
+      </div>
+      <p class="hint" id="np-status">Change either one to switch to it.</p>
     </div>
     <div class="watch-share" id="watch-share" hidden>
       <span class="watch-share-label">Watch together</span>
@@ -761,6 +781,9 @@
 
   function watchRoom(room, publicRelay, lanRelay) {
     showWatchLink(room, publicRelay, lanRelay);
+    npShown = "";
+    $("now-playing").hidden = true;
+    setTimeout(refreshNowPlaying, 0);
     $("watch").hidden = false;
     if (watchRoomCode === room && watchPeer && !watchPeer.destroyed) return;  // already watching it
     stopWatching();
@@ -792,6 +815,61 @@
       }, { once: true, capture: true });
     });
   }
+
+  /* ---------- Now playing: switch season or episode (TV shows) ---------- */
+  // While watching a room, what's playing there is checked every few seconds. For a TV show,
+  // the dropdowns show its seasons and the current season's episodes, set to what's on.
+  // Picking another episode switches straight to it; picking another season switches to it
+  // and then asks which episode (the site only lists a season's episodes once it's open).
+  let npTimer = null, npShown = "", npBusy = false;
+
+  async function refreshNowPlaying() {
+    clearTimeout(npTimer);
+    npTimer = null;
+    if (!watchRoomCode) return;
+    let np = {};
+    try { np = (await api("/now-playing?room=" + encodeURIComponent(watchRoomCode))).body || {}; } catch (e) {}
+    const key = JSON.stringify(np);
+    if (!npBusy && key !== npShown) {
+      npShown = key;
+      const show = np.seasons && np.episodes && np.episodes.length;
+      $("now-playing").hidden = !show;
+      if (show) {
+        $("np-title").textContent = np.title ? "Now playing: " + np.title : "Now playing";
+        const seasons = np.seasons.length ? np.seasons : [[np.season, "Season " + np.season]];
+        $("np-season").innerHTML = seasons.map(([n, label]) =>
+          `<option value="${n}" ${n === np.season ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+        $("np-episode").innerHTML = np.episodes.map(([n, name]) =>
+          `<option value="${n}" ${n === np.episode ? "selected" : ""}>Episode ${n}${name ? " · " + escapeHtml(name) : ""}</option>`).join("");
+        $("np-season").disabled = $("np-episode").disabled = false;
+        $("np-status").textContent = "Change either one to switch to it.";
+        $("np-status").className = "hint";
+      }
+    }
+    if (watchRoomCode) npTimer = setTimeout(refreshNowPlaying, 5000);
+  }
+
+  async function switchTo(season, episode) {
+    npBusy = true;
+    $("np-season").disabled = $("np-episode").disabled = true;
+    $("np-status").textContent = episode ? `Switching to Season ${season}, Episode ${episode}…` : `Opening Season ${season}…`;
+    $("np-status").className = "hint";
+    unlockSound();  // this tap counts for sound too
+    try {
+      const res = await api("/switch", { room: watchRoomCode, season, episode });
+      if (!res.ok) throw new Error(res.body.error || "Couldn't switch.");
+      if (!episode) waitForChoices(res.body.pid);  // it'll ask which episode
+    } catch (e) {
+      $("np-status").textContent = e.message === "Failed to fetch" ? "Can't reach your Mac." : e.message;
+      $("np-status").className = "hint bad-text";
+      $("np-season").disabled = $("np-episode").disabled = false;
+    }
+    npBusy = false;
+    npShown = "";  // show the new episode once it's recorded
+  }
+
+  $("np-season").addEventListener("change", () => switchTo(+$("np-season").value, null));
+  $("np-episode").addEventListener("change", () => switchTo(+$("np-season").value, +$("np-episode").value));
 
   $("watch-stop").addEventListener("click", stopWatching);
   $("watch-copy").addEventListener("click", () => copyText($("watch-link").textContent, $("watch-copy"), "Copy link"));
