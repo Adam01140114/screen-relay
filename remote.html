@@ -87,6 +87,9 @@
   html.simple #runcmd { margin-top: 22px; background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   html.simple h1 { margin-bottom: 12px; }
 
+  .tv-volume { margin-top: 2px; }
+  .tv-volume label { margin: 8px 0 4px; font-size: 13px; display: flex; justify-content: space-between; }
+  .tv-volume input { width: 100%; height: 32px; accent-color: var(--accent); }
   .now-playing { display: grid; gap: 4px; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
   .now-playing[hidden] { display: none; }
   .now-playing label { margin: 8px 0 4px; font-size: 13px; }
@@ -279,6 +282,10 @@
     <div class="watch-buttons">
       <button id="watch-sound">Turn on sound</button>
       <button id="watch-fs" class="primary">Fullscreen</button>
+    </div>
+    <div class="tv-volume">
+      <label for="tv-volume">TV volume <span id="tv-volume-value"></span></label>
+      <input type="range" id="tv-volume" min="0" max="100" step="1" value="100">
     </div>
     <div class="now-playing" id="now-playing" hidden>
       <span class="watch-share-label" id="np-title">Now playing</span>
@@ -716,6 +723,7 @@
 
   function stopWatching() {
     clearTimeout(watchTimer);
+    volumeConns.clear();
     if (watchCall) try { watchCall.close(); } catch (e) {}
     if (watchPeer) watchPeer.destroy();
     watchPeer = watchCall = watchRoomCode = null;
@@ -872,6 +880,38 @@
     npBusy = false;
     npShown = "";  // show the new episode once it's recorded
   }
+
+  /* ---------- TV volume ---------- */
+  // The slider sets how loud the TV page plays (a share of the TV's own volume). This page is
+  // in the room like the TV is, so it sends the level straight to the room's other screens.
+  const volumeConns = new Map();  // slot peer id -> data connection
+  let volumeTimer = null;
+  function sendVolume(value) {
+    if (!watchPeer || watchPeer.destroyed || !watchRoomCode) return;
+    for (let i = 0; i < RELAY_SLOTS; i++) {
+      const id = relaySlot(watchRoomCode, i);
+      if (id === watchPeer.id) continue;  // that's this page
+      let conn = volumeConns.get(id);
+      if (conn && conn.open) { conn.send({ type: "volume", value }); continue; }
+      if (conn && !conn.open && conn.__connecting) continue;
+      conn = watchPeer.connect(id, { reliable: true });
+      conn.__connecting = true;
+      volumeConns.set(id, conn);
+      conn.on("open", () => { conn.__connecting = false; conn.send({ type: "volume", value: +$("tv-volume").value }); });
+      conn.on("close", () => { if (volumeConns.get(id) === conn) volumeConns.delete(id); });
+      conn.on("error", () => { if (volumeConns.get(id) === conn) volumeConns.delete(id); });
+      setTimeout(() => { if (conn.__connecting && volumeConns.get(id) === conn) volumeConns.delete(id); }, 8000);  // nobody there
+    }
+  }
+  function showVolume() { $("tv-volume-value").textContent = $("tv-volume").value + "%"; }
+  $("tv-volume").value = store.get("tv-volume") || "100";
+  showVolume();
+  $("tv-volume").addEventListener("input", () => {
+    showVolume();
+    store.set("tv-volume", $("tv-volume").value);
+    clearTimeout(volumeTimer);
+    volumeTimer = setTimeout(() => sendVolume(+$("tv-volume").value), 120);  // while dragging, ~8 times a second
+  });
 
   $("np-season").addEventListener("change", () => switchTo(+$("np-season").value, null));
   $("np-episode").addEventListener("change", () => switchTo(+$("np-season").value, +$("np-episode").value));
