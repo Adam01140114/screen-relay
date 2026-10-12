@@ -88,13 +88,42 @@
   html.simple h1 { margin-bottom: 12px; }
 
   .tv-volume { margin-top: 2px; }
-  .tv-volume label { margin: 8px 0 4px; font-size: 13px; display: flex; justify-content: space-between; }
-  .tv-volume input { width: 100%; height: 32px; accent-color: var(--accent); }
+  .tv-volume label { margin: 8px 0 2px; font-size: 13px; }
+  .tv-volume-row { display: flex; align-items: center; gap: 12px; }
+  .tv-volume-num { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; }
+  .tv-volume-num input {
+    width: 64px; padding: 8px 6px; font: 600 17px/1 inherit; text-align: center; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  }
+  /* Big sliders that are easy to drag with a thumb: a thick track and a large handle. */
+  .tv-range {
+    -webkit-appearance: none; appearance: none; flex: 1; width: 100%; height: 44px; margin: 0;
+    background: transparent; touch-action: none; --fill: 0%;
+  }
+  .tv-range::-webkit-slider-runnable-track {
+    height: 10px; border-radius: 5px;
+    background: linear-gradient(to right, var(--accent) var(--fill), var(--border) var(--fill));
+  }
+  .tv-range::-moz-range-track { height: 10px; border-radius: 5px; background: var(--border); }
+  .tv-range::-moz-range-progress { height: 10px; border-radius: 5px; background: var(--accent); }
+  .tv-range::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 30px; height: 30px; margin-top: -10px;
+    border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+  }
+  .tv-range::-moz-range-thumb {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent); border: 3px solid #fff;
+  }
+  .tv-playback { display: grid; gap: 4px; margin-top: 6px; }
+  .tv-playback[hidden] { display: none; }
+  .tv-playback-row { display: flex; align-items: center; gap: 12px; }
+  .tv-playback-row button { min-width: 96px; padding: 11px 14px; }
+  .tv-time { font: 600 15px ui-monospace, Menlo, monospace; color: var(--muted); }
   .now-playing { display: grid; gap: 4px; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
   .now-playing[hidden] { display: none; }
   .now-playing label { margin: 8px 0 4px; font-size: 13px; }
   .now-playing select { width: 100%; padding: 10px; font: inherit; font-size: 16px; }
   .np-pair { gap: 10px; }
+  #np-server-row[hidden], #np-episode-row[hidden] { display: none; }
   .watch-share { display: grid; gap: 8px; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
   .watch-share[hidden] { display: none; }
   .bad-text { color: var(--bad); }
@@ -283,13 +312,27 @@
       <button id="watch-sound">Turn on sound</button>
       <button id="watch-fs" class="primary">Fullscreen</button>
     </div>
+    <div class="tv-playback" id="tv-playback" hidden>
+      <div class="tv-playback-row">
+        <button id="tv-playpause" class="primary">Pause</button>
+        <span class="tv-time" id="tv-time">0:00 / 0:00</span>
+      </div>
+      <input type="range" class="tv-range" id="tv-progress" min="0" max="1" step="1" value="0" aria-label="Where in the video">
+    </div>
     <div class="tv-volume">
-      <label for="tv-volume">TV volume <span id="tv-volume-value"></span></label>
-      <input type="range" id="tv-volume" min="0" max="100" step="1" value="100">
+      <label for="tv-volume">TV volume</label>
+      <div class="tv-volume-row">
+        <input type="range" class="tv-range" id="tv-volume" min="0" max="100" step="1" value="100">
+        <span class="tv-volume-num"><input type="number" id="tv-volume-value" min="0" max="100" step="1" inputmode="numeric" aria-label="TV volume, percent">%</span>
+      </div>
     </div>
     <div class="now-playing" id="now-playing" hidden>
       <span class="watch-share-label" id="np-title">Now playing</span>
-      <div class="pair np-pair">
+      <div id="np-server-row">
+        <label for="np-server">Server <span class="muted">(if the picture is black or stuck, try another)</span></label>
+        <select id="np-server"></select>
+      </div>
+      <div class="pair np-pair" id="np-episode-row">
         <div>
           <label for="np-season">Season</label>
           <select id="np-season"></select>
@@ -842,24 +885,35 @@
     if (!watchRoomCode) return;
     let np = {};
     try { np = (await api("/now-playing?room=" + encodeURIComponent(watchRoomCode))).body || {}; } catch (e) {}
-    const key = JSON.stringify(np);
+    updatePlayback(np.playback);
+    const key = JSON.stringify({ ...np, playback: undefined });
     if (!npBusy && key !== npShown) {
       npShown = key;
-      const show = np.seasons && np.episodes && np.episodes.length;
-      $("now-playing").hidden = !show;
-      if (show) {
+      const episodesKnown = !!(np.seasons && np.episodes && np.episodes.length);
+      const serversKnown = !!(np.servers && np.servers.length);
+      $("now-playing").hidden = !(episodesKnown || serversKnown);
+      $("np-episode-row").hidden = !episodesKnown;
+      $("np-server-row").hidden = !serversKnown;
+      if (serversKnown) {
+        $("np-server").innerHTML = np.servers.map((label, i) =>
+          `<option value="${i + 1}" ${i + 1 === np.server ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+        $("np-server").disabled = false;
+      }
+      if (episodesKnown || serversKnown) {
         $("np-title").textContent = np.title ? "Now playing: " + np.title : "Now playing";
+        $("np-status").textContent = episodesKnown ? "Change the season or episode to switch to it." : "";
+        $("np-status").className = "hint";
+      }
+      if (episodesKnown) {
         const seasons = np.seasons.length ? np.seasons : [[np.season, "Season " + np.season]];
         $("np-season").innerHTML = seasons.map(([n, label]) =>
           `<option value="${n}" ${n === np.season ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
         $("np-episode").innerHTML = np.episodes.map(([n, name]) =>
           `<option value="${n}" ${n === np.episode ? "selected" : ""}>Episode ${n}${name ? " · " + escapeHtml(name) : ""}</option>`).join("");
         $("np-season").disabled = $("np-episode").disabled = false;
-        $("np-status").textContent = "Change either one to switch to it.";
-        $("np-status").className = "hint";
       }
     }
-    if (watchRoomCode) npTimer = setTimeout(refreshNowPlaying, 5000);
+    if (watchRoomCode) npTimer = setTimeout(refreshNowPlaying, 2000);
   }
 
   async function switchTo(season, episode) {
@@ -903,14 +957,103 @@
       setTimeout(() => { if (conn.__connecting && volumeConns.get(id) === conn) volumeConns.delete(id); }, 8000);  // nobody there
     }
   }
-  function showVolume() { $("tv-volume-value").textContent = $("tv-volume").value + "%"; }
+  function setFill(range) {
+    const max = +range.max || 1;
+    range.style.setProperty("--fill", Math.max(0, Math.min(100, (+range.value / max) * 100)) + "%");
+  }
+  function showVolume() {
+    if (document.activeElement !== $("tv-volume-value")) $("tv-volume-value").value = $("tv-volume").value;
+    setFill($("tv-volume"));
+  }
+  // Typing a number works too: it moves the slider and sets the TV's volume.
+  $("tv-volume-value").addEventListener("change", () => {
+    const v = Math.max(0, Math.min(100, Math.round(+$("tv-volume-value").value || 0)));
+    $("tv-volume-value").value = v;
+    $("tv-volume").value = v;
+    $("tv-volume").dispatchEvent(new Event("input"));
+  });
+  $("tv-volume-value").addEventListener("keydown", e => { if (e.key === "Enter") $("tv-volume-value").blur(); });
   $("tv-volume").value = store.get("tv-volume") || "100";
   showVolume();
   $("tv-volume").addEventListener("input", () => {
     showVolume();
+    setFill($("tv-volume"));
     store.set("tv-volume", $("tv-volume").value);
     clearTimeout(volumeTimer);
     volumeTimer = setTimeout(() => sendVolume(+$("tv-volume").value), 120);  // while dragging, ~8 times a second
+  });
+
+  /* ---------- TV playback: Pause/Play and the progress bar ---------- */
+  // The Mac reports where the TV's video is about once a second; between reports the bar
+  // moves on by itself while it's playing. Pause/Play and dragging the bar are sent to the
+  // Mac, which does it on the video itself.
+  let pb = null, pbDragging = false;
+  const clock = t => { t = Math.max(0, Math.floor(t || 0));
+    const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, sec = String(t % 60).padStart(2, "0");
+    return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`; };
+  const pbNow = () => pb ? Math.min(pb.duration || Infinity, pb.time + (pb.paused ? 0 : (Date.now() - pb.received) / 1000)) : 0;
+
+  function drawPlayback() {
+    if (!pb) return;
+    const t = pbDragging ? +$("tv-progress").value : pbNow();
+    if (!pbDragging) {
+      $("tv-progress").max = Math.max(1, Math.round(pb.duration || 0));
+      $("tv-progress").value = Math.round(t);
+    }
+    setFill($("tv-progress"));
+    $("tv-time").textContent = clock(t) + " / " + clock(pb.duration);
+    $("tv-playpause").textContent = pb.paused ? "Play" : "Pause";
+  }
+
+  function updatePlayback(report) {
+    $("tv-playback").hidden = !report || !report.duration;
+    if (!report || !report.duration) { pb = null; return; }
+    pb = { time: report.time, duration: report.duration, paused: report.paused, received: Date.now() };
+    drawPlayback();
+  }
+  setInterval(drawPlayback, 500);
+
+  async function sendControl(action, time) {
+    try {
+      const res = await api("/control", { room: watchRoomCode, action, time });
+      if (!res.ok) throw new Error(res.body.error || "Couldn't reach the TV's video.");
+    } catch (e) {
+      $("np-status").textContent = e.message === "Failed to fetch" ? "Can't reach your Mac." : e.message;
+      $("np-status").className = "hint bad-text";
+    }
+  }
+
+  $("tv-playpause").addEventListener("click", () => {
+    if (!pb) return;
+    const action = pb.paused ? "play" : "pause";
+    pb = { ...pb, time: pbNow(), paused: !pb.paused, received: Date.now() };  // show it right away
+    drawPlayback();
+    sendControl(action);
+  });
+  $("tv-progress").addEventListener("input", () => { pbDragging = true; drawPlayback(); });
+  $("tv-progress").addEventListener("change", () => {
+    const to = +$("tv-progress").value;
+    pbDragging = false;
+    if (pb) pb = { ...pb, time: to, received: Date.now() };
+    drawPlayback();
+    sendControl("seek", to);
+  });
+
+  $("np-server").addEventListener("change", async () => {
+    const server = +$("np-server").value;
+    $("np-server").disabled = true;
+    $("np-status").textContent = `Switching to Server ${server}…`;
+    $("np-status").className = "hint";
+    try {
+      const res = await api("/server", { room: watchRoomCode, server });
+      if (!res.ok) throw new Error(res.body.error || "Couldn't switch servers.");
+      $("np-status").textContent = `Server ${server} picked. It starts playing in a few seconds.`;
+    } catch (e) {
+      $("np-status").textContent = e.message === "Failed to fetch" ? "Can't reach your Mac." : e.message;
+      $("np-status").className = "hint bad-text";
+    }
+    npShown = "";  // show the new selection once the Mac has switched
+    setTimeout(() => { $("np-server").disabled = false; }, 4000);
   });
 
   $("np-season").addEventListener("change", () => switchTo(+$("np-season").value, null));
