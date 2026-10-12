@@ -531,6 +531,17 @@ $("tvBtn").onclick = () => {
   document.documentElement.requestFullscreen?.().catch(() => {});
   startTv();
 };
+// A live screen should never sit paused. Phones (iPhones especially) pause a video when you
+// leave their fullscreen player, so start it again straight away.
+function keepLivePlaying() {
+  if (tvVideo.srcObject && tvVideo.paused) setTimeout(() => { if (tvVideo.srcObject && tvVideo.paused) tvVideo.play().catch(() => {}); }, 150);
+}
+tvVideo.addEventListener("webkitendfullscreen", keepLivePlaying);
+tvVideo.addEventListener("pause", keepLivePlaying);
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) keepLivePlaying(); });
+document.addEventListener("webkitfullscreenchange", () => { if (!document.webkitFullscreenElement) keepLivePlaying(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepLivePlaying(); });
+
 $("fsBtn").onclick = () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen?.().catch(() => {});

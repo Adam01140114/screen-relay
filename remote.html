@@ -1067,6 +1067,17 @@
     wv.play().catch(() => {});
     setSoundButton();
   });
+  // A live screen should never sit paused on the phone. iPhones pause a video when you leave
+  // their fullscreen player (and sometimes on their own), so start it again straight away.
+  function keepLivePlaying() {
+    if (wv.srcObject && wv.paused) setTimeout(() => { if (wv.srcObject && wv.paused) wv.play().catch(() => {}); }, 150);
+  }
+  wv.addEventListener("webkitendfullscreen", keepLivePlaying);  // iPhone: left its fullscreen player
+  wv.addEventListener("pause", keepLivePlaying);
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) keepLivePlaying(); });
+  document.addEventListener("webkitfullscreenchange", () => { if (!document.webkitFullscreenElement) keepLivePlaying(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepLivePlaying(); });
+
   $("watch-fs").addEventListener("click", () => {
     const frame = wv.parentElement;
     if (wv.webkitEnterFullscreen && !frame.requestFullscreen) wv.webkitEnterFullscreen();  // iPhone
