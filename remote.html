@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search Command Builder</title>
+<script>
+  // On the phone (anything but this Mac) only the essentials show: title, type, season and
+  // episode, site, Run and the live screen. Everything marked .adv, and the logs, is hidden.
+  // The remote page (anything not served by the helper on port 8766) is always simple too.
+  if (!["localhost", "127.0.0.1", ""].includes(location.hostname)
+      || (location.protocol !== "file:" && location.port !== "8766")) document.documentElement.classList.add("simple");
+</script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #5f6b7a;
+    --border: #d7dce2; --accent: #2f6fed; --accent-text: #ffffff; --code-bg: #f0f2f5;
+    --warn-bg: #fff4d6; --warn-text: #6b4e00; --ok: #1f8a4c; --bad: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171b; --card: #1d2126; --text: #e8ebef; --muted: #9aa5b1;
+      --border: #333a42; --accent: #5b8ef5; --accent-text: #0d1117; --code-bg: #111418;
+      --warn-bg: #3a2f10; --warn-text: #f3d68a; --ok: #4cc27f; --bad: #ef6b6b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 16px; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main {
+    max-width: 760px; margin: 0 auto 20px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px; padding: 28px;
+  }
+  h1 { font-size: 20px; margin: 0 0 20px; }
+  h2 { font-size: 17px; margin: 0; }
+  label { display: block; font-weight: 600; margin: 16px 0 6px; }
+  input[type=text] {
+    width: 100%; padding: 10px 12px; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  }
+  input[type=number] {
+    width: 100%; padding: 10px 12px; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  }
+  input[type=number]:focus,
+  input[type=text]:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg label { flex: 1; margin: 0; font-weight: 500; text-align: center; cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; }
+  .seg span { display: block; padding: 10px; }
+  .seg input:checked + span { background: var(--accent); color: var(--accent-text); }
+  .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -3px; }
+  pre {
+    margin: 22px 0 12px; padding: 14px; background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; white-space: pre-wrap; word-break: break-all;
+    font: 13px/1.5 ui-monospace, Menlo, monospace;
+  }
+  button {
+    padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap;
+    background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.wide { width: 100%; padding: 11px; }
+  button:disabled { opacity: .45; cursor: default; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  button.run { margin-top: 8px; }
+
+  .watch { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px; display: grid; gap: 10px; }
+  .watch[hidden] { display: none; }
+  .watch-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .watch-state { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .watch-state .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border); }
+  .watch-state[data-state="live"] { color: var(--bad); }
+  .watch-state[data-state="live"] .dot { background: var(--bad); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .watch-frame { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden; }
+  .watch-frame video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .watch-wait { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; color: #aab3bf; font-size: 14px; text-align: center; padding: 16px; }
+  .watch-wait[hidden] { display: none; }
+  .watch-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .watch-buttons button { padding: 11px; }
+
+  html.simple .adv, html.simple #logs { display: none !important; }
+  html.simple #share-row { grid-template-columns: 1fr; }
+  html.simple #runcmd { margin-top: 22px; background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  html.simple h1 { margin-bottom: 12px; }
+
+  .watch-share { display: grid; gap: 8px; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .watch-share[hidden] { display: none; }
+  .watch-share-label { font-weight: 600; }
+  .watch-lan { display: grid; gap: 8px; margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--border); }
+  .watch-lan[hidden] { display: none; }
+  .watch-share .hint, .watch-share .tv-link, .watch-share .tv-qr { margin: 0 auto 0 0; }
+  .watch-share .tv-qr { margin: 4px auto; }
+  .watch-share .tv-link { margin: 0; }
+
+  #pick-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 48px); padding: 18px; }
+  .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; margin-top: 12px; }
+  .pick-card {
+    display: grid; gap: 6px; padding: 0; border: 0; background: none; color: var(--text);
+    text-align: left; white-space: normal; font-weight: 500; cursor: pointer;
+  }
+  .pick-card:disabled { opacity: .4; }
+  .pick-poster {
+    position: relative; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden;
+    background: var(--code-bg); border: 1px solid var(--border);
+  }
+  .pick-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pick-badge {
+    position: absolute; top: 6px; left: 6px; padding: 2px 7px; border-radius: 999px;
+    font: 700 11px/1.5 -apple-system, sans-serif; color: #fff; background: rgba(0, 0, 0, .7);
+  }
+  .pick-badge.tv { background: var(--accent); color: var(--accent-text); }
+  .pick-name { font-size: 13px; line-height: 1.3; }
+  .pick-card:focus-visible .pick-poster { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .pick-list { display: grid; gap: 8px; margin-top: 12px; }
+  .pick-section {
+    grid-column: 1 / -1; margin: 6px 0 -2px; padding-bottom: 6px; border-bottom: 2px solid var(--border);
+    font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  }
+  .pick-section:not(:first-child) { margin-top: 18px; }
+  .pick-section span { font-weight: 500; letter-spacing: 0; opacity: .8; }
+  .pick-row {
+    display: grid; gap: 2px; padding: 12px 14px; text-align: left; white-space: normal;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text);
+  }
+  .pick-row:disabled { opacity: .4; }
+  .pick-row-title { font-weight: 600; }
+  .pick-row-sub { font-weight: 400; font-size: 13px; color: var(--muted); }
+
+  .remote-status { margin: -8px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .remote-status.ok { color: var(--ok); }
+  .remote-status.bad { color: var(--bad); }
+  .pass-input { width: 100%; font: 600 26px ui-monospace, Menlo, monospace; letter-spacing: .3em; text-align: center; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+
+  dialog {
+    width: min(440px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--card); color: var(--text);
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, .55); }
+  dialog h2 { margin-bottom: 4px; }
+  dialog > * + * { margin-top: 12px; }
+  .dlg-status { margin: 0; color: var(--muted); font-size: 14px; }
+  .dlg-status.bad { color: var(--bad); }
+  .dlg-status.ok { color: var(--ok); }
+  .tv-pick { margin-top: 14px; }
+  .tv-qr { margin: 14px auto 0; width: max-content; background: #fff; padding: 12px; border-radius: 10px; line-height: 0; }
+  .tv-qr:empty { display: none; }
+  .tv-link {
+    display: block; margin-top: 12px; padding: 12px; text-align: center; word-break: break-all;
+    font: 600 15px/1.4 ui-monospace, Menlo, monospace; color: var(--accent);
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; text-decoration: none;
+  }
+
+  .log-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .log-head h2 { margin-right: auto; }
+  select {
+    padding: 8px 10px; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; max-width: 100%;
+  }
+  .status { color: var(--muted); font-size: 13px; margin-bottom: 8px; word-break: break-all; }
+  .status b.running { color: var(--accent); }
+  .status b.done { color: var(--ok); }
+  .status b.failed, .status b.stopped { color: var(--bad); }
+  .banner {
+    display: none; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;
+    padding: 8px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); font-size: 13px;
+  }
+  .banner.show { display: flex; }
+  .banner span { margin-right: auto; }
+  textarea {
+    width: 100%; min-height: 320px; padding: 12px; resize: vertical; color: var(--text);
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    font: 13px/1.5 ui-monospace, Menlo, monospace; white-space: pre; overflow: auto;
+  }
+  .find { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0 8px; }
+  .find input[type=text] { padding: 8px 10px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row .count { color: var(--muted); font-size: 13px; margin-right: auto; }
+  .check { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 500; font-size: 13px; }
+  textarea.sel { min-height: 0; white-space: pre; padding: 10px 12px; background: var(--bg); }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pair[hidden] { display: none; }
+  .opts { display: grid; gap: 8px; }
+  .opts .check { align-items: flex-start; font-size: 14px; }
+  .opts input { margin-top: 3px; }
+  .muted { color: var(--muted); font-weight: 400; }
+  @media (max-width: 520px) { .find { grid-template-columns: 1fr; } main { padding: 20px; } }
+</style>
+</head>
+<body>
+<main id="builder">
+  <h1>Search Command Builder</h1>
+  <p class="remote-status" id="remote-status" hidden></p>
+
+  <label class="check adv"><input type="checkbox" id="share"> Share my screen to the TV first <span class="muted">(the show's tab with its sound, through Screen Relay, before finding the show)</span></label>
+  <div id="share-row" class="pair">
+    <div>
+      <label for="room">Room code</label>
+      <input type="text" id="room" placeholder="e.g. 1234" spellcheck="false" autocapitalize="characters">
+    </div>
+    <div class="adv">
+      <label for="shareurl">Screen Relay page</label>
+      <input type="text" id="shareurl" placeholder="http://localhost:8765/" spellcheck="false">
+    </div>
+  </div>
+  <div class="hint adv" id="share-hint">On the TV, open the relay page with <code>#tv=</code> and the room code on the end so it always uses that code.</div>
+
+  <label for="title">Title</label>
+  <input type="text" id="title" placeholder="e.g. The Bear" autofocus>
+
+  <label class="adv">Type</label>
+  <div class="seg adv">
+    <label><input type="radio" name="kind" value="tv" checked><span>TV Show</span></label>
+    <label><input type="radio" name="kind" value="movie"><span>Movie</span></label>
+  </div>
+
+  <div id="ep-row" class="pair adv">
+    <div>
+      <label for="season">Season <span class="muted">(optional)</span></label>
+      <input type="number" id="season" min="1" step="1" inputmode="numeric" placeholder="e.g. 24">
+    </div>
+    <div>
+      <label for="episode">Episode <span class="muted">(optional)</span></label>
+      <input type="number" id="episode" min="1" step="1" inputmode="numeric" placeholder="e.g. 13">
+    </div>
+  </div>
+
+  <label for="url">Site</label>
+  <input type="text" id="url" placeholder="e.g. www.example.com">
+  <div class="hint adv">Everything here is remembered if you reload.</div>
+
+  <div class="adv">
+    <label for="sel">Play button selectors <span class="muted">(one per line, pressed in order, e.g. intro Play, server, real Play. The last line is pressed again every 5s until fullscreen shows, then fullscreen is clicked)</span></label>
+    <textarea id="sel" class="sel" rows="3" placeholder="e.g. #playBtn" spellcheck="false"></textarea>
+    <div class="hint">In Chrome: right-click the real Play button &rsaquo; Inspect &rsaquo; in the Elements panel right-click the highlighted line &rsaquo; Copy &rsaquo; Copy selector, then paste it here. It's remembered for this site after one run.</div>
+
+    <label for="fssel">Fullscreen button selector <span class="muted">(optional; only if it doesn't go fullscreen by itself)</span></label>
+    <input type="text" id="fssel" class="sel" placeholder="e.g. .player-fullscreen" spellcheck="false">
+    <div class="hint">Right-click the player's fullscreen icon &rsaquo; Inspect, then copy the selector of the button (or the element just around the icon). Remembered for this site after one run.</div>
+
+    <label for="aftersel">Buttons after fullscreen <span class="muted">(one per line, each pressed once, in order, about a second apart, once the player is fullscreen. List a button twice to press it twice)</span></label>
+    <textarea id="aftersel" class="sel" rows="2" placeholder="e.g. .big-play" spellcheck="false"></textarea>
+    <div class="hint">Same as above: Inspect the button, Copy &rsaquo; Copy selector. Leave empty to skip. Remembered for this site after one run.</div>
+
+    <label for="keepsel">Then keep it playing <span class="muted">(pressed only while the video is paused, until it's really playing)</span></label>
+    <input type="text" id="keepsel" class="sel" placeholder="e.g. .big-play" spellcheck="false">
+    <div class="hint">Play buttons usually pause too, so this checks the video before every press instead of pressing a set number of times.</div>
+
+    <label>Options</label>
+    <div class="opts">
+    <label class="check"><input type="checkbox" id="teach"> Teach the real Play button <span class="muted">(you click it; it's remembered for this site)</span></label>
+    <label class="check"><input type="checkbox" id="debug"> Debug <span class="muted">(outlines the button it picks in red, lists what it found)</span></label>
+    </div>
+
+    <pre id="out"></pre>
+    <button id="copy" class="primary wide">Copy command</button>
+  </div>
+  <button id="runcmd" class="wide run">Run command</button>
+  <button id="phonebtn" class="wide run adv" hidden>Open on my phone</button>
+
+  <section class="watch" id="watch" hidden aria-label="Live screen">
+    <div class="watch-head">
+      <span class="watch-state" id="watch-state" data-state="idle"><span class="dot"></span><span id="watch-text">Connecting…</span></span>
+      <button id="watch-stop" class="adv">Stop watching</button>
+    </div>
+    <div class="watch-frame">
+      <video id="watch-video" playsinline autoplay muted></video>
+      <p class="watch-wait" id="watch-wait">Waiting for the screen…</p>
+    </div>
+    <div class="watch-buttons">
+      <button id="watch-sound">Turn on sound</button>
+      <button id="watch-fs" class="primary">Fullscreen</button>
+    </div>
+    <div class="watch-share" id="watch-share" hidden>
+      <span class="watch-share-label">Watch together</span>
+      <p class="hint">Open this on another phone to watch the same thing, from anywhere.</p>
+      <div class="tv-qr" id="watch-qr" aria-label="QR code for the watch link"></div>
+      <div class="tv-link" id="watch-link"></div>
+      <button id="watch-copy" class="wide">Copy link</button>
+      <div class="watch-lan" id="watch-lan" hidden>
+        <span class="watch-share-label">On my Wi-Fi</span>
+        <p class="hint">For people on the same Wi-Fi as this Mac: loads straight from the Mac.</p>
+        <div class="tv-link" id="watch-lan-link"></div>
+        <button id="watch-lan-copy" class="wide">Copy Wi-Fi link</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="pass-dialog" aria-labelledby="pass-title">
+  <form id="pass-form" method="dialog">
+    <h2 id="pass-title">Enter your passcode</h2>
+    <p class="dlg-status" id="pass-status">This page starts shows on your Mac, so it needs your passcode once.</p>
+    <input type="password" id="pass-input" inputmode="numeric" autocomplete="current-password" class="pass-input" aria-label="Passcode">
+    <button type="submit" class="primary wide">Connect</button>
+  </form>
+</dialog>
+
+<dialog id="pick-dialog" aria-labelledby="pick-title">
+  <h2 id="pick-title">Which one?</h2>
+  <p class="dlg-status" id="pick-status">Tap the one you want to watch.</p>
+  <div class="pick-grid" id="pick-grid"></div>
+</dialog>
+
+<dialog id="phone-dialog" aria-labelledby="phone-title">
+  <h2 id="phone-title">Use the builder on your phone</h2>
+  <p class="dlg-status">Scan this with your phone's camera while it's on the same Wi-Fi as this Mac. The link never changes, and the phone remembers it after the first time.</p>
+  <div class="tv-qr" id="phone-qr" aria-label="QR code for the phone link"></div>
+  <div class="tv-link" id="phone-link"></div>
+  <p class="hint">This link holds a secret key that lets a device start runs. Only share it with your own devices.</p>
+  <button id="phone-copy" class="primary wide">Copy phone link</button>
+  <div class="watch-lan" id="remote-box" hidden>
+    <span class="watch-share-label">From anywhere</span>
+    <p class="hint">Works away from home too. It asks for your passcode once. Keep this link private: it holds the key to your Mac.</p>
+    <div class="tv-link" id="remote-link"></div>
+    <button id="remote-copy" class="wide">Copy remote link</button>
+  </div>
+  <button id="phone-close" class="wide">Close</button>
+</dialog>
+
+<dialog id="tv-dialog" aria-labelledby="tv-title">
+  <h2 id="tv-title">Put this on your TV</h2>
+  <p class="dlg-status" id="tv-status">Starting…</p>
+  <div id="tv-links">
+    <div class="seg tv-pick" role="tablist">
+      <label><input type="radio" name="tvnet" value="public" checked><span>Any network</span></label>
+      <label><input type="radio" name="tvnet" value="lan"><span>Same Wi-Fi</span></label>
+    </div>
+    <div class="tv-qr" id="tv-qr" aria-label="QR code for the TV link"></div>
+    <a class="tv-link" id="tv-link" target="_blank" rel="noopener"></a>
+    <p class="hint" id="tv-note"></p>
+    <button id="tv-copy" class="primary wide">Copy TV link</button>
+    <button id="tv-open" class="wide run">Open TV link</button>
+  </div>
+  <p class="hint">The show starts right away; follow along in Logs below. Running again stops the previous run.</p>
+  <button id="tv-close" class="wide">Close</button>
+</dialog>
+
+<main id="logs">
+  <div class="log-head">
+    <h2>Logs</h2>
+    <select id="run" aria-label="Which run"></select>
+    <button id="copy-log" class="primary">Copy logs</button>
+  </div>
+  <div class="status" id="status">No logs yet. Run a command and its output shows up here.</div>
+  <div class="banner" id="banner">
+    <span>This run printed more since you edited it.</span>
+    <button id="load-latest">Show new output (drops edits)</button>
+  </div>
+  <textarea id="log" spellcheck="false" placeholder="Logs appear here…"></textarea>
+
+  <div class="find">
+    <input type="text" id="find" placeholder="Find" aria-label="Find">
+    <input type="text" id="replace" placeholder="Replace with" aria-label="Replace with">
+  </div>
+  <div class="row">
+    <span class="count" id="count"></span>
+    <label class="check"><input type="checkbox" id="case"> Match case</label>
+    <button id="find-next">Find next</button>
+    <button id="replace-one">Replace</button>
+    <button id="replace-all">Replace all</button>
+    <button id="revert">Revert to original</button>
+  </div>
+  <div class="hint">You can type in the logs. Edits are kept per run in this browser; the log files on disk aren't changed.</div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  // Single-quote for the shell so titles with spaces, quotes, $ or ! are safe.
+  const q = s => "'" + s.replace(/'/g, "'\\''") + "'";
+  const shq = s => /^[A-Za-z0-9_.,:=@%+\/-]+$/.test(s) ? s : q(s);   // only quote when needed
+  const store = {
+    get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+    del: k => { try { localStorage.removeItem(k); } catch (e) {} },
+  };
+
+  /* ---------- Talking to the helper ---------- */
+  // Served by the helper (localhost:8766 or the Mac's Wi-Fi address), requests go straight
+  // to it. Served from Render (remote.html), they go to an agent on the Mac through
+  // PeerJS: its address is made from the key in this page's link (#k=...) and the passcode,
+  // so only someone with both can reach it. The agent only accepts a title, site and room.
+  const REMOTE = location.protocol !== "file:" && location.port !== "8766";
+  let remotePeer = null, remoteConn = null, remoteReady = null, remoteRid = 0;
+  const remoteWaiting = new Map();
+
+  async function sha256Hex(text) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+  function setRemoteStatus(text, kind) {
+    $("remote-status").hidden = false;
+    $("remote-status").textContent = text;
+    $("remote-status").className = "remote-status" + (kind ? " " + kind : "");
+  }
+  function askPasscode(message) {
+    return new Promise(resolve => {
+      if (message) { $("pass-status").textContent = message; $("pass-status").className = "dlg-status bad"; }
+      $("pass-input").value = "";
+      $("pass-dialog").showModal();
+      $("pass-form").onsubmit = e => {
+        e.preventDefault();
+        const pass = $("pass-input").value.trim();
+        if (!pass) return;
+        $("pass-dialog").close();
+        resolve(pass);
+      };
+    });
+  }
+  // Connects to the Mac's agent (once; again after a drop). Resolves when it can take requests.
+  function connectRemote(message) {
+    if (remoteReady) return remoteReady;
+    remoteReady = (async () => {
+      const key = new URLSearchParams(location.hash.slice(1)).get("k") || store.get("remote-key");
+      if (!key) { setRemoteStatus("This link is missing its key. Open the remote link from your Mac.", "bad"); throw new Error("no key"); }
+      store.set("remote-key", key);
+      let pass = store.get("remote-pass");
+      if (!pass || message) { pass = await askPasscode(message); }
+      setRemoteStatus("Connecting to your Mac…");
+      const peerId = "screenrelay-remote-" + (await sha256Hex(key + ":" + pass)).slice(0, 32);
+      if (!window.Peer) throw new Error("Couldn't load the connection library. Check the internet connection.");
+      return await new Promise((resolve, reject) => {
+        const peer = remotePeer = new Peer();
+        const fail = err => { try { peer.destroy(); } catch (e) {} reject(err); };
+        const timer = setTimeout(() => fail(new Error("timeout")), 15000);
+        peer.on("open", () => {
+          const conn = peer.connect(peerId, { reliable: true });
+          conn.on("open", () => {
+            clearTimeout(timer);
+            remoteConn = conn;
+            store.set("remote-pass", pass);
+            setRemoteStatus("Connected to your Mac", "ok");
+            resolve(conn);
+          });
+          conn.on("data", msg => { const w = remoteWaiting.get(msg && msg.rid); if (w) { remoteWaiting.delete(msg.rid); w(msg); } });
+          conn.on("close", () => { if (remoteConn === conn) { remoteConn = null; remoteReady = null; setRemoteStatus("Reconnecting to your Mac…"); } });
+        });
+        peer.on("error", err => {
+          clearTimeout(timer);
+          if (err.type === "peer-unavailable") fail(new Error("unavailable"));
+          else if (!remoteConn) fail(err);
+        });
+      });
+    })().catch(err => {
+      remoteReady = null;
+      if (err.message === "unavailable") {
+        // Wrong passcode, or the Mac (or its helper) is off: both look the same from here.
+        setRemoteStatus("Can't reach your Mac. Check the passcode, and that the Mac and its helper are on.", "bad");
+        store.del("remote-pass");
+      } else if (err.message !== "no key") {
+        setRemoteStatus("Can't reach your Mac right now. Try again in a moment.", "bad");
+      }
+      throw err;
+    });
+    return remoteReady;
+  }
+  // {ok, status, body} for a request to the helper, wherever this page is served from.
+  async function api(path, body) {
+    if (!REMOTE) {
+      const res = body === undefined ? await fetch(path, { cache: "no-store" })
+        : await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      return { ok: res.ok, status: res.status, body: await res.json() };
+    }
+    let conn;
+    try { conn = await connectRemote(); } catch (e) { throw new Error("Failed to fetch"); }
+    const rid = ++remoteRid;
+    const reply = await new Promise((resolve, reject) => {
+      remoteWaiting.set(rid, resolve);
+      setTimeout(() => { if (remoteWaiting.delete(rid)) reject(new Error("Failed to fetch")); }, 20000);
+      conn.send({ rid, path, body });
+    });
+    return { ok: reply.status >= 200 && reply.status < 300, status: reply.status, body: reply.body || {} };
+  }
+
+  /* ---------- Command builder ---------- */
+
+  // Restore everything from last time (title, type and site).
+  $("title").value = store.get("title") || "";
+  $("url").value = store.get("site") || "";
+  const savedKind = store.get("kind");
+  const radio = savedKind && document.querySelector(`input[name=kind][value="${savedKind}"]`);
+  if (radio) radio.checked = true;
+  // Your site's play buttons (found with Inspect), in order: the intro Play (the button holding
+  // the "player-play-disc" icon), then the real one. Change them here if the site changes.
+  const DEFAULT_PLAY_SELECTOR = 'button:has([class*="player-play-disc"])\n#playBtn';
+  const savedSel = store.get("sel");
+  $("season").value = store.get("season") || "";
+  $("episode").value = store.get("episode") || "";
+  $("sel").value = !savedSel || savedSel === "#playBtn" ? DEFAULT_PLAY_SELECTOR : savedSel;
+  // The player's fullscreen button (an ArtPlayer control, found with Inspect).
+  const DEFAULT_FS_SELECTOR = ".art-control-fullscreen";
+  $("fssel").value = store.get("fssel") || DEFAULT_FS_SELECTOR;
+  // Screen Relay (~/Desktop/screenshare) and the TV's room code, shared before the show is found.
+  const DEFAULT_SHARE_URL = "http://localhost:8765/";
+  $("share").checked = store.get("share") !== "0";
+  $("room").value = (store.get("room") || "").trim() || "1234";  // always filled in, 1234 unless changed
+  // On the phone the screen is always shared (the live screen there needs it).
+  if (document.documentElement.classList.contains("simple")) $("share").checked = true;
+  $("shareurl").value = store.get("shareurl") || DEFAULT_SHARE_URL;
+  // Pressed once fullscreen, in order: the big play button (the 90px light-grey icon), the
+  // player's muted-speaker icon to unmute (it only shows while muted, so it's skipped if sound
+  // is on). Getting it actually playing is the "keep it playing" box below.
+  const BIG_PLAY = 'svg#Capa_1[fill="#f0efef"]';
+  const DEFAULT_AFTER_SELECTOR = [BIG_PLAY, ".art-control-volume .art-icon-volumeClose"].join("\n");
+  const OLD_AFTER = [[BIG_PLAY, ".art-control-volume .art-icon-volumeClose", BIG_PLAY, BIG_PLAY, BIG_PLAY].join("\n"), [BIG_PLAY, ".art-control-volume .art-icon-volumeClose", BIG_PLAY, BIG_PLAY].join("\n"), [BIG_PLAY, ".art-control-volume .art-icon-volumeClose"].join("\n"), [BIG_PLAY, ".art-control-volume .art-icon-volumeClose", BIG_PLAY].join("\n"), [BIG_PLAY, ".art-control-volume .art-icon-volumeClose", BIG_PLAY, BIG_PLAY].join("\n"), 'svg#Capa_1[fill="#f0efef"]\n.art-control-volume .art-icon-volumeClose', 'svg#Capa_1[fill="#f0efef"]', 'svg#Capa_1[fill="#f0efef"]\nsvg:has(> path[d^="M4.71 3.29a1 1 0 0 0-1.42 1.42l16 16"])'];
+  const savedAfter = store.get("aftersel");
+  $("aftersel").value = savedAfter === null || OLD_AFTER.includes(savedAfter) ? DEFAULT_AFTER_SELECTOR : savedAfter;
+  $("keepsel").value = store.get("keepsel") ?? BIG_PLAY;
+  $("teach").checked = store.get("teach") === "1";
+  $("debug").checked = store.get("debug") === "1";
+
+  let currentArgs = [], currentRoom = null;
+  function build() {
+    const title = $("title").value.trim();
+    const url = $("url").value.trim();
+    const kind = document.querySelector("input[name=kind]:checked").value;
+    store.set("title", $("title").value);
+    store.set("site", url);
+    store.set("kind", kind);
+    store.set("sel", $("sel").value);
+    store.set("fssel", $("fssel").value);
+    store.set("share", $("share").checked ? "1" : "0");
+    store.set("room", $("room").value);
+    store.set("shareurl", $("shareurl").value);
+    const sharing = $("share").checked, room = $("room").value.trim().toUpperCase() || "1234";
+    const shareUrl = $("shareurl").value.trim() || DEFAULT_SHARE_URL;
+    $("share-row").hidden = $("share-hint").hidden = !sharing;
+    $("share-hint").innerHTML = `On the TV, open <code>${shareUrl.replace(/#.*$/, "").replace(/&/g, "&amp;").replace(/</g, "&lt;")}#tv=${room.replace(/[^A-Z0-9]/g, "") || "1234"}</code> so it always uses that room code.`;
+    const shareArgs = sharing && room ? ["--share-room", room, ...(shareUrl !== DEFAULT_SHARE_URL ? ["--share-url", shareUrl] : [])] : [];
+    store.set("aftersel", $("aftersel").value);
+    store.set("keepsel", $("keepsel").value);
+    store.set("season", $("season").value);
+    store.set("episode", $("episode").value);
+    const season = parseInt($("season").value, 10), ep = parseInt($("episode").value, 10);
+    $("ep-row").hidden = kind !== "tv";
+    store.set("teach", $("teach").checked ? "1" : "0");
+    store.set("debug", $("debug").checked ? "1" : "0");
+    const sels = $("sel").value.split("\n").map(l => l.trim()).filter(Boolean);
+    const lines = box => $(box).value.split("\n").map(l => l.trim()).filter(Boolean);
+    // The command as a list of arguments: Run sends this as-is, Copy shows it shell-quoted.
+    // On the phone there's no Type, Season or Episode: the results show up there and you
+    // pick one (--pick); for a TV show it then asks which season and episode the same way.
+    const picking = document.documentElement.classList.contains("simple");
+    currentArgs = [title || "title", "--url", url || "site", ...(picking ? ["--pick"] : ["--type", kind]), ...shareArgs,
+      ...(!picking && kind === "tv" && season > 0 ? ["--season", String(season)] : []),
+      ...(!picking && kind === "tv" && ep > 0 ? ["--episode", String(ep)] : []),
+      ...lines("sel").flatMap(l => ["--play-selector", l]),
+      ...($("fssel").value.trim() ? ["--fullscreen-selector", $("fssel").value.trim()] : []),
+      ...lines("aftersel").flatMap(l => ["--after-fullscreen-selector", l]),
+      ...($("keepsel").value.trim() ? ["--keep-playing", $("keepsel").value.trim()] : []),
+      ...($("teach").checked ? ["--teach"] : []), ...($("debug").checked ? ["--debug"] : [])];
+    currentRoom = sharing && room ? room : null;
+    $("copy").disabled = $("runcmd").disabled = !title || !url;
+    $("out").textContent = "python3 ~/Desktop/site-search/search.py " + currentArgs.map(shq).join(" ");
+  }
+
+  async function copyText(text, button, label) {
+    try { await navigator.clipboard.writeText(text); }
+    catch (e) {
+      const t = document.createElement("textarea");
+      t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove();
+    }
+    button.textContent = "Copied!";
+    setTimeout(() => button.textContent = label, 1200);
+  }
+
+  document.querySelectorAll("#builder input, #builder textarea").forEach(el => {
+    el.addEventListener("input", build);
+    el.addEventListener("change", build);
+    el.addEventListener("keydown", e => {
+      if (e.key === "Enter" && el.tagName !== "TEXTAREA" && !$("copy").disabled) $("copy").click();
+    });
+  });
+  $("copy").addEventListener("click", () => copyText($("out").textContent, $("copy"), "Copy command"));
+
+  /* ---------- Run command ---------- */
+  // Run works when this page is served by builder-server.py (http://localhost:8766/), which
+  // starts search.py with these exact arguments. The pop-up shows the link to open on the TV:
+  // "Any network" is Screen Relay on Render; "Same Wi-Fi" is the copy on this Mac.
+
+  let tvLinks = { public: null, lan: null };
+  const tvNet = () => document.querySelector("input[name=tvnet]:checked").value;
+
+  function setDialogStatus(text, kind) {
+    $("tv-status").textContent = text;
+    $("tv-status").className = "dlg-status" + (kind ? " " + kind : "");
+  }
+
+  function showTvLink() {
+    const net = tvNet();
+    store.set("tvnet", net);
+    const link = tvLinks[net];
+    $("tv-link").textContent = link || "Not available";
+    $("tv-link").href = link || "#";
+    $("tv-qr").textContent = "";
+    if (link && window.QRCode) new QRCode($("tv-qr"), { text: link, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+    $("tv-copy").disabled = $("tv-open").disabled = !link;
+    $("tv-note").textContent = net === "public"
+      ? "Works on the TV wherever it is. Bookmark it there and the TV is always ready on this room."
+      : link ? "Only while the TV is on the same Wi-Fi as this Mac, and this Mac is awake."
+             : "Couldn't find this Mac's Wi-Fi address. Use Any network instead.";
+  }
+
+  async function runCommand() {
+    // This tap is what lets the phone play the live screen with sound later (browsers only
+    // allow sound after a tap), so the video is unlocked for sound right now.
+    if (!onThisMac) unlockSound();
+    tvLinks = { public: null, lan: null };
+    $("tv-links").hidden = !currentRoom;
+    setDialogStatus("Starting…");
+    // On the phone the live screen shows right under Run, so the TV pop-up only opens on
+    // this Mac (or on the phone if something goes wrong).
+    if (onThisMac && !$("tv-dialog").open) $("tv-dialog").showModal();
+    if (location.protocol === "file:") {
+      setDialogStatus("Run needs the builder's helper. In Terminal run: python3 ~/Desktop/site-search/builder-server.py — "
+        + "it opens this page at http://localhost:8766/, where Run works.", "bad");
+      $("tv-links").hidden = true;
+      if (!$("tv-dialog").open) $("tv-dialog").showModal();
+      return;
+    }
+    try {
+      const res = await api("/run", { args: currentArgs,
+        remote: { title: $("title").value.trim(), site: $("url").value.trim(), room: currentRoom } });
+      const body = res.body;
+      if (!res.ok) throw new Error(body.error || "The helper refused to run it.");
+      if (currentRoom) {
+        const room = encodeURIComponent(currentRoom);
+        tvLinks.public = body.publicRelay + "#tv=" + room;
+        tvLinks.lan = body.lanRelay && body.relayRunning ? body.lanRelay + "#tv=" + room : null;
+        setDialogStatus(`Running. Open this on the TV whenever you like; your screen goes on it as soon as it's on room ${currentRoom}.`, "ok");
+        showTvLink();
+      } else {
+        setDialogStatus("Running. Screen sharing is off, so there's no TV link this time.", "ok");
+      }
+      following = true;
+      if (!onThisMac) {
+        waitForChoices(body.pid);
+        $("runcmd").textContent = "Started!";
+        setTimeout(() => $("runcmd").textContent = "Run command", 1500);
+        if (currentRoom) watchRoom(currentRoom, body.publicRelay, body.relayRunning ? body.lanRelay : null);
+      }
+    } catch (e) {
+      setDialogStatus(e.message === "Failed to fetch"
+        ? (REMOTE ? "Can't reach your Mac. Make sure it's on and its helper is running."
+                  : "Can't reach the builder's helper. Start it with: python3 ~/Desktop/site-search/builder-server.py")
+        : e.message, "bad");
+      $("tv-links").hidden = true;
+      if (!$("tv-dialog").open) $("tv-dialog").showModal();
+    }
+  }
+
+  const savedNet = store.get("tvnet");
+  if (savedNet) { const r = document.querySelector(`input[name=tvnet][value="${savedNet}"]`); if (r) r.checked = true; }
+  document.querySelectorAll("input[name=tvnet]").forEach(r => r.addEventListener("change", showTvLink));
+  $("runcmd").addEventListener("click", runCommand);
+  $("tv-copy").addEventListener("click", () => copyText($("tv-link").textContent, $("tv-copy"), "Copy TV link"));
+  // Opens the TV page in a new tab, e.g. to watch on this phone.
+  $("tv-open").addEventListener("click", () => { const link = tvLinks[tvNet()]; if (link) window.open(link, "_blank", "noopener"); });
+  $("tv-close").addEventListener("click", () => $("tv-dialog").close());
+
+  /* ---------- Watch here (phone) ---------- */
+  // After Run on the phone, the shared screen plays right here, under the Run button. This
+  // page joins the room like a TV does (Screen Relay's protocol: each screen takes the first
+  // free slot of the room code), so the TV can watch at the same time.
+  const RELAY_PREFIX = "screenrelay-tv-", RELAY_SLOTS = 4;
+  const relaySlot = (room, i) => RELAY_PREFIX + room + (i ? "-" + i : "");
+  // Same as Screen Relay's: stereo, high-bitrate sound instead of WebRTC's mono voice-call default.
+  function hiFiAudio(sdp) {
+    const m = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
+    if (!m) return sdp;
+    return sdp.replace(new RegExp("a=fmtp:" + m[1] + " ([^\\r\\n]*)"), (line, params) => "a=fmtp:" + m[1] + " "
+      + params.split(";").filter(p => p && !/^(stereo|sprop-stereo|maxaveragebitrate)=/.test(p))
+          .concat(["stereo=1", "sprop-stereo=1", "maxaveragebitrate=510000"]).join(";"));
+  }
+  const onThisMac = ["localhost", "127.0.0.1"].includes(location.hostname) && location.port === "8766";
+  let watchPeer = null, watchCall = null, watchRoomCode = null, watchSlot = 0, watchTimer = null;
+  const wv = $("watch-video");
+
+  function setWatch(state, text) {
+    $("watch-state").dataset.state = state;
+    $("watch-text").textContent = text;
+  }
+
+  function endWatchStream(text) {
+    watchCall = null;
+    wv.srcObject = null;
+    $("watch-wait").hidden = false;
+    $("watch-wait").textContent = text || "Waiting for the screen…";
+    setWatch("idle", "Waiting on room " + watchRoomCode);
+  }
+
+  function stopWatching() {
+    clearTimeout(watchTimer);
+    if (watchCall) try { watchCall.close(); } catch (e) {}
+    if (watchPeer) watchPeer.destroy();
+    watchPeer = watchCall = watchRoomCode = null;
+    wv.srcObject = null;
+    $("watch").hidden = true;
+  }
+
+  function openWatchPeer() {
+    watchTimer = null;
+    if (!watchRoomCode) return;
+    if (!window.Peer) { setWatch("idle", "Couldn't load the player. Check the internet connection."); return; }
+    const peer = watchPeer = new Peer(relaySlot(watchRoomCode, watchSlot));
+    peer.on("open", () => { if (!watchCall) endWatchStream(); });
+    peer.on("call", call => {
+      if (watchCall) try { watchCall.close(); } catch (e) {}
+      watchCall = call;
+      call.answer(undefined, { sdpTransform: hiFiAudio });
+      call.on("stream", st => {
+        wv.srcObject = st;
+        $("watch-wait").hidden = true;
+        setWatch("live", "Live · room " + watchRoomCode);
+        $("watch-sound").hidden = !st.getAudioTracks().length;
+        playWithSound();
+      });
+      call.on("close", () => { if (watchCall === call) endWatchStream("Sharing ended."); });
+    });
+    peer.on("connection", conn => conn.on("data", d => { if (d === "bye") endWatchStream("Sharing ended."); }));
+    peer.on("disconnected", () => { if (!peer.destroyed) peer.reconnect(); });
+    peer.on("error", err => {
+      if (peer !== watchPeer) return;
+      if (err.type === "unavailable-id") {
+        // Another screen (e.g. the TV) is on this slot: take the next one.
+        peer.destroy();
+        watchSlot = (watchSlot + 1) % RELAY_SLOTS;
+        setWatch("idle", "Joining room " + watchRoomCode + "…");
+        watchTimer = setTimeout(openWatchPeer, watchSlot ? 300 : 2500);
+      } else if (["network", "server-error", "socket-error"].includes(err.type)) {
+        if (watchCall) {
+          // Already watching: the video doesn't need the server, so keep playing and just
+          // reconnect to the server in the background.
+          setTimeout(() => { if (peer === watchPeer && peer.disconnected && !peer.destroyed) try { peer.reconnect(); } catch (e) {} }, 4000);
+          return;
+        }
+        peer.destroy();
+        setWatch("idle", "Can't reach the internet. Retrying…");
+        watchTimer = setTimeout(openWatchPeer, 4000);
+      }
+    });
+  }
+
+  // The link for another phone: Screen Relay on Render, so it works on any network.
+  function showWatchLink(room, publicRelay, lanRelay) {
+    const lan = lanRelay ? lanRelay + "#tv=" + encodeURIComponent(room) : null;
+    $("watch-lan").hidden = !lan;
+    $("watch-lan-link").textContent = lan || "";
+    const link = publicRelay ? publicRelay + "#tv=" + encodeURIComponent(room) : null;
+    $("watch-share").hidden = !link;
+    if (!link || $("watch-link").textContent === link) return;
+    $("watch-link").textContent = link;
+    $("watch-qr").textContent = "";
+    if (window.QRCode) new QRCode($("watch-qr"), { text: link, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M });
+  }
+
+  function watchRoom(room, publicRelay, lanRelay) {
+    showWatchLink(room, publicRelay, lanRelay);
+    $("watch").hidden = false;
+    if (watchRoomCode === room && watchPeer && !watchPeer.destroyed) return;  // already watching it
+    stopWatching();
+    $("watch").hidden = false;
+    watchRoomCode = room;
+    watchSlot = 0;
+    endWatchStream();
+    setWatch("idle", "Joining room " + room + "…");
+    openWatchPeer();
+  }
+
+  // Sound is on by default. If the browser still won't allow it, play muted and turn sound
+  // on at the next tap anywhere on the page.
+  function setSoundButton() { $("watch-sound").textContent = wv.muted ? "Turn on sound" : "Mute"; }
+  function unlockSound() {
+    wv.muted = false;
+    const p = wv.play();
+    if (p) p.catch(() => {});
+    setSoundButton();
+  }
+  function playWithSound() {
+    wv.muted = false;
+    wv.play().then(setSoundButton).catch(() => {
+      wv.muted = true;
+      wv.play().catch(() => {});
+      setSoundButton();
+      document.addEventListener("pointerdown", e => {
+        if (wv.muted && !e.target.closest("#watch-sound")) unlockSound();
+      }, { once: true, capture: true });
+    });
+  }
+
+  $("watch-stop").addEventListener("click", stopWatching);
+  $("watch-copy").addEventListener("click", () => copyText($("watch-link").textContent, $("watch-copy"), "Copy link"));
+  $("watch-lan-copy").addEventListener("click", () => copyText($("watch-lan-link").textContent, $("watch-lan-copy"), "Copy Wi-Fi link"));
+  $("watch-sound").addEventListener("click", () => {
+    wv.muted = !wv.muted;
+    wv.play().catch(() => {});
+    setSoundButton();
+  });
+  $("watch-fs").addEventListener("click", () => {
+    const frame = wv.parentElement;
+    if (wv.webkitEnterFullscreen && !frame.requestFullscreen) wv.webkitEnterFullscreen();  // iPhone
+    else if (frame.requestFullscreen) frame.requestFullscreen().catch(() => wv.webkitEnterFullscreen && wv.webkitEnterFullscreen());
+    else if (frame.webkitRequestFullscreen) frame.webkitRequestFullscreen();
+  });
+  window.addEventListener("pagehide", () => { if (watchPeer) watchPeer.destroy(); });  // free the slot
+
+  /* ---------- Pick a result (phone) ---------- */
+  // The run searches, then waits: its results show up here as posters, and the one tapped
+  // is what it opens (a TV show or a movie).
+  let pickTimer = null, pickShownId = null, pickPid = null;
+  const escapeHtml = t => String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+  // Keeps checking while the run goes: it may ask several things in turn (which title,
+  // then which season and episode).
+  function waitForChoices(pid) {
+    clearTimeout(pickTimer);
+    pickShownId = null;
+    pickPid = pid;
+    const until = Date.now() + 30 * 60 * 1000;
+    const poll = async () => {
+      pickTimer = null;
+      let data = null;
+      try { data = (await api("/choices?pid=" + encodeURIComponent(pid))).body; } catch (e) {}
+      if (pid !== pickPid) return;  // a newer run took over
+      if (data && data.id && data.id !== pickShownId) showChoices(data);
+      if (data && data.alive === false) {  // the run ended
+        if ($("pick-dialog").open && !data.id) $("pick-dialog").close();
+        return;
+      }
+      if (Date.now() < until) pickTimer = setTimeout(poll, 1000);
+    };
+    poll();
+  }
+
+  // Results grouped under a "TV Shows" and a "Movies" heading, each card keeping its index.
+  function resultSections(items, card) {
+    return [["tv", "TV Shows"], ["movie", "Movies"]].map(([kind, heading]) => {
+      const cards = items.map((it, i) => [it, i]).filter(([it]) => (it.kind === "tv") === (kind === "tv"));
+      if (!cards.length) return "";
+      return `<h3 class="pick-section">${heading} <span>${cards.length}</span></h3>` + cards.map(([it, i]) => card(it, i)).join("");
+    }).join("");
+  }
+
+  function showChoices(data) {
+    pickShownId = data.id;
+    const list = data.kind === "season" || data.kind === "episode";
+    $("pick-title").textContent = data.prompt || "Which one?";
+    $("pick-status").textContent = data.kind === "season" ? "Tap a season." : data.kind === "episode" ? "Tap an episode."
+                                 : "Tap the one you want to watch.";
+    $("pick-status").className = "dlg-status";
+    $("pick-grid").className = list ? "pick-list" : "pick-grid";
+    $("pick-grid").innerHTML = list ? data.items.map((it, i) => `
+      <button class="pick-row" data-index="${i}">
+        <span class="pick-row-title">${escapeHtml(it.title)}</span>
+        ${it.subtitle ? `<span class="pick-row-sub">${escapeHtml(it.subtitle)}</span>` : ""}
+      </button>`).join("") : resultSections(data.items, (it, i) => `
+      <button class="pick-card" data-index="${i}">
+        <span class="pick-poster">
+          ${it.poster ? `<img src="${escapeHtml(it.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}
+          <span class="pick-badge ${it.kind === "tv" ? "tv" : ""}">${it.kind === "tv" ? "TV" : "Movie"}</span>
+        </span>
+        <span class="pick-name">${escapeHtml(it.title)}</span>
+      </button>`);
+    $("pick-grid").querySelectorAll("img").forEach(img => img.addEventListener("error", () => img.remove()));
+    if (!$("pick-dialog").open) $("pick-dialog").showModal();
+  }
+
+  $("pick-grid").addEventListener("click", async e => {
+    const card = e.target.closest(".pick-card, .pick-row");
+    if (!card) return;
+    unlockSound();  // this tap also counts for the live screen's sound
+    $("pick-grid").querySelectorAll("button").forEach(b => b.disabled = true);
+    $("pick-status").textContent = "Opening…";
+    try {
+      const res = await api("/choose", { pid: pickPid, id: pickShownId, index: +card.dataset.index });
+      const body = res.body;
+      if (!res.ok) throw new Error(body.error || "Couldn't pick that one.");
+      $("pick-dialog").close();
+    } catch (err) {
+      $("pick-status").textContent = err.message === "Failed to fetch" ? "Can't reach the builder's helper." : err.message;
+      $("pick-status").className = "dlg-status bad";
+      $("pick-grid").querySelectorAll("button").forEach(b => b.disabled = false);
+    }
+  });
+
+  /* ---------- Open on my phone ---------- */
+  // Only on this Mac (http://localhost:8766): the helper hands out the phone link, which
+  // holds the key that lets the phone in.
+  let phoneLink = null;
+  $("phonebtn").hidden = !["localhost", "127.0.0.1"].includes(location.hostname);
+  $("phonebtn").addEventListener("click", async () => {
+    $("phone-qr").textContent = "";
+    $("phone-copy").disabled = true;
+    $("phone-dialog").showModal();
+    try {
+      const links = await (await fetch("/phone-link")).json();
+      phoneLink = links.url;
+      $("remote-link").textContent = links.remote || "";
+      $("remote-box").hidden = !links.remote;
+    } catch (e) { phoneLink = null; }
+    if (phoneLink && window.QRCode) new QRCode($("phone-qr"), { text: phoneLink, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+    else $("phone-qr").textContent = "";
+    $("phone-link").textContent = phoneLink || "";
+    $("phone-copy").disabled = !phoneLink;
+    if (!phoneLink) $("phone-title").textContent = "Couldn't find this Mac's Wi-Fi address";
+  });
+  $("phone-copy").addEventListener("click", () => phoneLink && copyText(phoneLink, $("phone-copy"), "Copy phone link"));
+  $("phone-close").addEventListener("click", () => $("phone-dialog").close());
+  $("remote-copy").addEventListener("click", () => copyText($("remote-link").textContent, $("remote-copy"), "Copy remote link"));
+  build();
+
+  /* ---------- Logs ---------- */
+  // search.py rewrites logs.js (next to this page) as it runs. It's re-loaded every
+  // second so the newest output always shows. Edits are stored per run as
+  // {text, base}: base is the original output at the time of the edit, so we can tell
+  // when the run has printed more since.
+
+  let runs = [];
+  let current = null;        // id of the run being shown
+  let following = true;      // jump to each new run as it starts
+  const editKey = id => "log-edit:" + id;
+  const getEdit = id => { try { return JSON.parse(store.get(editKey(id))); } catch (e) { return null; } };
+
+  function poll() {
+    const s = document.createElement("script");
+    s.src = "logs.js?t=" + Date.now();
+    s.onload = () => { s.remove(); update(window.SEARCH_LOGS || []); };
+    s.onerror = () => { s.remove(); };
+    document.head.appendChild(s);
+  }
+
+  function update(next) {
+    const newest = next[0] && next[0].id;
+    const hadNewest = runs[0] && runs[0].id;
+    runs = next;
+    if (!runs.length) return;
+    if (!current || (following && newest !== hadNewest) || !runs.some(r => r.id === current)) current = newest;
+    renderPicker();
+    render();
+  }
+
+  function renderPicker() {
+    const sel = $("run");
+    const html = runs.map((r, i) =>
+      `<option value="${r.id}">${i === 0 ? "Latest · " : ""}${r.started} · ${r.status}${getEdit(r.id) ? " · edited" : ""}</option>`).join("");
+    if (sel.innerHTML !== html) sel.innerHTML = html;
+    sel.value = current;
+  }
+
+  function render() {
+    const run = runs.find(r => r.id === current);
+    if (!run) return;
+    $("status").innerHTML = "";
+    const b = document.createElement("b");
+    b.className = run.status;
+    b.textContent = run.status === "running" ? "Running…" : run.status[0].toUpperCase() + run.status.slice(1);
+    $("status").append(b, ` · started ${run.started} · `, run.command);
+
+    const edit = getEdit(run.id);
+    const text = edit ? edit.text : run.text;
+    $("banner").classList.toggle("show", !!edit && edit.base !== run.text);
+    const box = $("log");
+    if (box.value !== text && document.activeElement !== box) {
+      const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+      box.value = text;
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    }
+    countMatches();
+  }
+
+  function saveEdit() {
+    const run = runs.find(r => r.id === current);
+    if (!run) return;
+    const edit = getEdit(run.id);
+    if ($("log").value === run.text && !edit) return;
+    store.set(editKey(run.id), JSON.stringify({ text: $("log").value, base: edit ? edit.base : run.text }));
+    renderPicker();
+  }
+
+  $("log").addEventListener("input", saveEdit);
+  $("log").addEventListener("blur", render);   // catch up on output that arrived while typing
+  $("run").addEventListener("change", () => {
+    current = $("run").value;
+    following = current === (runs[0] && runs[0].id);   // picking an older run stops auto-jumping
+    $("log").value = "";
+    render();
+  });
+  $("revert").addEventListener("click", () => {
+    if (!getEdit(current) || !confirm("Throw away your edits to this run's log?")) return;
+    store.del(editKey(current));
+    $("log").value = "";
+    renderPicker(); render();
+  });
+  $("load-latest").addEventListener("click", () => {
+    store.del(editKey(current));
+    $("log").value = "";
+    renderPicker(); render();
+  });
+  $("copy-log").addEventListener("click", () => copyText($("log").value, $("copy-log"), "Copy logs"));
+
+  /* ---------- Find & replace ---------- */
+
+  const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = () => $("find").value
+    ? new RegExp(escapeRe($("find").value), $("case").checked ? "g" : "gi") : null;
+
+  function countMatches() {
+    const re = pattern();
+    if (!re) { $("count").textContent = ""; return; }
+    const n = ($("log").value.match(re) || []).length;
+    $("count").textContent = n === 1 ? "1 match" : `${n} matches`;
+  }
+
+  // Replaces the textarea's selection through the editing system so Cmd+Z can undo it.
+  function insert(box, start, end, text) {
+    box.focus();
+    box.setSelectionRange(start, end);
+    if (!document.execCommand("insertText", false, text)) box.setRangeText(text, start, end, "end");
+    saveEdit();
+  }
+
+  function findNext() {
+    const re = pattern(), box = $("log");
+    if (!re) return false;
+    re.lastIndex = box.selectionEnd;
+    const m = re.exec(box.value) || (re.lastIndex = 0, re.exec(box.value));   // wrap to the top
+    if (!m) { countMatches(); return false; }
+    box.focus();
+    box.setSelectionRange(m.index, m.index + m[0].length);
+    return true;
+  }
+
+  function selectionMatches() {
+    const box = $("log"), re = pattern();
+    if (!re || box.selectionStart === box.selectionEnd) return false;
+    const sel = box.value.slice(box.selectionStart, box.selectionEnd);
+    return new RegExp("^" + re.source + "$", re.flags.replace("g", "")).test(sel);
+  }
+
+  $("find-next").addEventListener("click", findNext);
+  $("replace-one").addEventListener("click", () => {
+    const box = $("log");
+    if (selectionMatches()) insert(box, box.selectionStart, box.selectionEnd, $("replace").value);
+    findNext();
+    countMatches();
+  });
+  $("replace-all").addEventListener("click", () => {
+    const re = pattern(), box = $("log");
+    if (!re) return;
+    const replaced = box.value.replace(re, () => $("replace").value);
+    if (replaced !== box.value) insert(box, 0, box.value.length, replaced);
+    countMatches();
+  });
+  ["find", "case"].forEach(id => $(id).addEventListener("input", countMatches));
+  $("find").addEventListener("keydown", e => { if (e.key === "Enter") findNext(); });
+  $("log").addEventListener("input", countMatches);
+
+  if (!REMOTE) {  // the logs live on the Mac; the remote page doesn't show them
+    poll();
+    setInterval(poll, 1000);
+  } else {
+    connectRemote().catch(() => {});
+  }
+</script>
+</body>
+</html>
