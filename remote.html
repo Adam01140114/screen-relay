@@ -734,7 +734,7 @@
       watchCall = call;
       call.answer(undefined, { sdpTransform: hiFiAudio });
       call.on("stream", st => {
-        wv.srcObject = st;
+        if (wv.srcObject !== st) wv.srcObject = st;
         $("watch-wait").hidden = true;
         setWatch("live", "Live · room " + watchRoomCode);
         $("watch-sound").hidden = !st.getAudioTracks().length;
@@ -804,9 +804,14 @@
     if (p) p.catch(() => {});
     setSoundButton();
   }
+  let playToken = 0;
   function playWithSound() {
+    // Runs once per track (picture, then sound); a newer call interrupting an older play()
+    // is an AbortError, not a refusal, so only NotAllowedError falls back to muted.
+    const token = ++playToken;
     wv.muted = false;
-    wv.play().then(setSoundButton).catch(() => {
+    wv.play().then(() => { if (token === playToken) setSoundButton(); }).catch(err => {
+      if (token !== playToken || (err && err.name !== "NotAllowedError")) return;
       wv.muted = true;
       wv.play().catch(() => {});
       setSoundButton();

@@ -74,6 +74,13 @@
   #tv .howto strong { color: var(--tv-fg); font-weight: 500; }
   #tv .qr { background: #fff; padding: 16px; border-radius: 14px; line-height: 0; }
   #tv .qr img, #tv .qr canvas { width: clamp(150px, 22vw, 280px) !important; height: auto !important; }
+  #tv .sound-prompt { margin: 22px 0 0; font-size: clamp(1rem, 1.9vw, 1.6rem); color: #ffd166; max-width: 30ch; }
+  #tv .sound-prompt.on { color: #6ee7a8; }
+  #tv .sound-overlay {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5;
+    padding: 0.6em 1.1em; border-radius: 16px; background: rgba(0, 0, 0, 0.8); color: #fff;
+    font: 600 clamp(1.6rem, 4vw, 3.4rem) var(--display); pointer-events: none;
+  }
   #tv .tv-status { position: absolute; left: 24px; bottom: 20px; font: 500 0.85rem var(--mono); color: var(--tv-muted); letter-spacing: 0.04em; }
   #tv video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
   #tv .tv-controls { position: absolute; right: 20px; bottom: 20px; display: flex; gap: 10px; transition: opacity 0.3s; }
@@ -131,10 +138,12 @@
       <div class="eyebrow">Room code</div>
       <div class="big-code" id="tvCode">·····</div>
       <p class="howto">On your computer, go to <strong id="tvUrl"></strong> and enter this code.</p>
+      <p class="sound-prompt" id="soundPrompt">Press <strong>OK</strong> on your remote once so everything plays with sound.</p>
     </div>
     <div class="qr" id="qr" aria-label="QR code for the share page"></div>
   </div>
   <video id="tvVideo" autoplay playsinline hidden></video>
+  <div class="sound-overlay" id="soundOverlay" hidden>Press <strong>OK</strong> for sound</div>
   <div class="tv-status" id="tvStatus">Getting a code…</div>
   <div class="tv-controls" id="tvControls">
     <button id="soundBtn" class="sound" hidden>Turn on sound</button>
@@ -424,25 +433,54 @@ function openTvPeer() {
   });
 }
 
+// Sound: browsers only let a page play sound after someone has pressed something on it, and
+// then for as long as the page stays open. So any press at all (a remote button, a click, a
+// tap) turns sound on, the waiting screen asks for one press up front, and from then on
+// every show that arrives on this page plays with sound. If one still arrives muted, a big
+// "Press OK for sound" shows until the next press.
+let soundUnlocked = false;
+function markSoundOn() {
+  soundUnlocked = true;
+  $("soundPrompt").textContent = "Sound is on. Leave this page open and every show plays with sound.";
+  $("soundPrompt").classList.add("on");
+}
+function onAnyPress(e) {
+  if (e.type === "keydown" && (e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack")) return;
+  if (!soundUnlocked) markSoundOn();
+  if (tvVideo.srcObject && tvVideo.muted) {
+    tvVideo.muted = false;
+    tvVideo.play().then(() => { $("soundBtn").hidden = true; $("soundOverlay").hidden = true; })
+      .catch(() => { tvVideo.muted = true; });
+  }
+}
+["keydown", "pointerdown", "click", "touchstart"].forEach((t) => document.addEventListener(t, onAnyPress, { capture: true }));
+if (navigator.userActivation && navigator.userActivation.hasBeenActive) markSoundOn();
+
+let playToken = 0;
 function playOnTv(s) {
-  tvVideo.srcObject = s;
+  // The connection hands over the picture and the sound as separate events, so this runs
+  // twice in a row; a newer call interrupts the older one's play(), which isn't a refusal.
+  const token = ++playToken;
+  if (tvVideo.srcObject !== s) tvVideo.srcObject = s;
   tvVideo.hidden = false;
   $("tvWaiting").hidden = true;
   $("tvStatus").hidden = true;
   $("tvControls").classList.add("autohide");
   const hasSound = s.getAudioTracks().length > 0;
   tvVideo.muted = false;
-  tvVideo.play().then(() => { $("soundBtn").hidden = true; }).catch(() => {
-    // Browser blocked sound until someone interacts; play muted, offer a button, and turn
-    // sound on at the first tap anywhere.
+  tvVideo.play().then(() => {
+    if (token !== playToken) return;
+    $("soundBtn").hidden = true;
+    $("soundOverlay").hidden = true;
+    if (hasSound) markSoundOn();
+  }).catch((err) => {
+    // Only a real "not allowed" means muted for now (the next press anywhere turns sound on);
+    // an interrupted play() (AbortError) from the second event is ignored.
+    if (token !== playToken || (err && err.name !== "NotAllowedError")) return;
     tvVideo.muted = true;
     tvVideo.play().catch(() => {});
     $("soundBtn").hidden = !hasSound;
-    if (hasSound) document.addEventListener("pointerdown", () => {
-      if (!tvVideo.muted) return;
-      tvVideo.muted = false;
-      tvVideo.play().then(() => { $("soundBtn").hidden = true; }).catch(() => { tvVideo.muted = true; });
-    }, { once: true, capture: true });
+    $("soundOverlay").hidden = !hasSound;
   });
 }
 
@@ -453,6 +491,7 @@ function endTvStream() {
   $("tvWaiting").hidden = false;
   $("tvStatus").hidden = false;
   $("soundBtn").hidden = true;
+  $("soundOverlay").hidden = true;
   $("tvControls").classList.remove("autohide");
   $("tvStatus").textContent = "Sharing ended. Waiting for a computer to share.";
 }
@@ -476,6 +515,7 @@ $("soundBtn").onclick = () => {
   tvVideo.muted = false;
   tvVideo.play().catch(() => {});
   $("soundBtn").hidden = true;
+  $("soundOverlay").hidden = true;
 };
 // Hide the cursor and buttons on the TV after a few seconds without movement.
 let idleTimer;
