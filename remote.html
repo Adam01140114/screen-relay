@@ -1107,6 +1107,12 @@
       if (data && data.id && data.id !== pickShownId) showChoices(data);
       if (data && data.alive === false) {  // the run ended
         if ($("pick-dialog").open && !data.id) $("pick-dialog").close();
+        // Ended without ever playing (nothing to watch in its room): say so, rather than
+        // leaving the live screen "Waiting on room …" for ever.
+        if (watchRoomCode && !pb && $("watch-state").dataset.state !== "live") {
+          setWatch("idle", "The run on the Mac stopped before it started playing. Tap Run to try again.");
+          $("watch-wait").textContent = "Nothing is playing.";
+        }
         return;
       }
       if (Date.now() < until) pickTimer = setTimeout(poll, 1000);
