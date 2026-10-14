@@ -360,6 +360,13 @@
   </section>
 </main>
 
+<dialog id="room-dialog" aria-labelledby="room-title">
+  <h2 id="room-title">Room in use</h2>
+  <p class="dlg-status" id="room-message"></p>
+  <button id="room-yes" class="primary wide">Yes</button>
+  <button id="room-no" class="wide">No</button>
+</dialog>
+
 <dialog id="pass-dialog" aria-labelledby="pass-title">
   <form id="pass-form" method="dialog">
     <h2 id="pass-title">Enter your passcode</h2>
@@ -483,6 +490,34 @@
     });
   }
   // Connects to the Mac's agent (once; again after a drop). Resolves when it can take requests.
+  // One attempt at the Mac's agent: resolves with the open connection, or fails.
+  function attemptRemote(peerId, pass, waitMs) {
+    return new Promise((resolve, reject) => {
+      const peer = remotePeer = new Peer();
+      const fail = err => { try { peer.destroy(); } catch (e) {} reject(err); };
+      const timer = setTimeout(() => fail(new Error("timeout")), waitMs);
+      const slow = setTimeout(() => setRemoteStatus("Still connecting to your Mac…"), 8000);
+      peer.on("open", () => {
+        const conn = peer.connect(peerId, { reliable: true });
+        conn.on("open", () => {
+          clearTimeout(timer); clearTimeout(slow);
+          remoteConn = conn;
+          store.set("remote-pass", pass);
+          setRemoteStatus("Connected to your Mac", "ok");
+          resolve(conn);
+        });
+        conn.on("data", msg => { const w = remoteWaiting.get(msg && msg.rid); if (w) { remoteWaiting.delete(msg.rid); w(msg); } });
+        conn.on("close", () => { if (remoteConn === conn) { remoteConn = null; remoteReady = null; setRemoteStatus("Reconnecting to your Mac…"); } });
+      });
+      peer.on("error", err => {
+        if (err.type === "peer-unavailable") { clearTimeout(timer); clearTimeout(slow); fail(new Error("unavailable")); }
+        else if (!remoteConn && ["network", "server-error", "socket-error", "browser-incompatible"].includes(err.type)) {
+          clearTimeout(timer); clearTimeout(slow); fail(err);
+        }
+      });
+    });
+  }
+
   function connectRemote(message) {
     if (remoteReady) return remoteReady;
     remoteReady = (async () => {
@@ -494,29 +529,20 @@
       setRemoteStatus("Connecting to your Mac…");
       const peerId = "screenrelay-remote-" + (await sha256Hex(key + ":" + pass)).slice(0, 32);
       if (!window.Peer) throw new Error("Couldn't load the connection library. Check the internet connection.");
-      return await new Promise((resolve, reject) => {
-        const peer = remotePeer = new Peer();
-        const fail = err => { try { peer.destroy(); } catch (e) {} reject(err); };
-        const timer = setTimeout(() => fail(new Error("timeout")), 15000);
-        peer.on("open", () => {
-          const conn = peer.connect(peerId, { reliable: true });
-          conn.on("open", () => {
-            clearTimeout(timer);
-            remoteConn = conn;
-            store.set("remote-pass", pass);
-            setRemoteStatus("Connected to your Mac", "ok");
-            resolve(conn);
-          });
-          conn.on("data", msg => { const w = remoteWaiting.get(msg && msg.rid); if (w) { remoteWaiting.delete(msg.rid); w(msg); } });
-          conn.on("close", () => { if (remoteConn === conn) { remoteConn = null; remoteReady = null; setRemoteStatus("Reconnecting to your Mac…"); } });
-        });
-        peer.on("error", err => {
-          clearTimeout(timer);
-          if (err.type === "peer-unavailable") fail(new Error("unavailable"));
-          else if (!remoteConn) fail(err);
-        });
-      });
-    })().catch(err => {
+      // Some networks (mobile data, some Wi-Fi) take a while to open a direct connection, or
+      // need a few tries: up to 3 attempts of 30 seconds each before giving up.
+      let lastErr = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (attempt > 1) setRemoteStatus(`Still connecting to your Mac… (try ${attempt} of 3)`);
+        try { return await attemptRemote(peerId, pass, 30000); }
+        catch (err) {
+          lastErr = err;
+          if (err.message === "unavailable") break;  // nobody at that address: retrying won't help
+        }
+      }
+      throw lastErr || new Error("timeout");
+    })();
+    remoteReady = remoteReady.catch(err => {
       remoteReady = null;
       if (err.message === "unavailable") {
         // Wrong passcode, or the Mac (or its helper) is off: both look the same from here.
@@ -676,10 +702,39 @@
              : "Couldn't find this Mac's Wi-Fi address. Use Any network instead.";
   }
 
+  // A room that's already showing something: say what, and offer the next free room.
+  // Resolves true to use that room instead, false to cancel.
+  function askRoomSwitch(room, st) {
+    return new Promise(resolve => {
+      const what = [st.title || "something",
+                    st.season ? "Season " + st.season : "", st.episode ? "Episode " + st.episode : ""]
+        .filter(Boolean).join(", ");
+      $("room-message").textContent = `Room ${room} is currently being used to watch ${what}.`
+        + (st.next ? ` Would you like to switch to the next available room (Room ${st.next})?` : " There's no free room to switch to.");
+      $("room-yes").hidden = !st.next;
+      $("room-yes").textContent = st.next ? `Yes, use Room ${st.next}` : "Yes";
+      $("room-no").textContent = st.next ? "No" : "OK";
+      const done = answer => { $("room-dialog").close(); resolve(answer); };
+      $("room-yes").onclick = () => done(true);
+      $("room-no").onclick = () => done(false);
+      $("room-dialog").oncancel = () => resolve(false);
+      $("room-dialog").showModal();
+    });
+  }
+
   async function runCommand() {
     // This tap is what lets the phone play the live screen with sound later (browsers only
     // allow sound after a tap), so the video is unlocked for sound right now.
     if (!onThisMac) unlockSound();
+    if (currentRoom && location.protocol !== "file:") {
+      let st = null;
+      try { st = (await api("/room-status?room=" + encodeURIComponent(currentRoom))).body; } catch (e) {}
+      if (st && st.busy) {
+        if (!(await askRoomSwitch(currentRoom, st))) return;
+        $("room").value = st.next;
+        build();  // the command now uses the new room
+      }
+    }
     tvLinks = { public: null, lan: null };
     $("tv-links").hidden = !currentRoom;
     setDialogStatus("Starting…");
