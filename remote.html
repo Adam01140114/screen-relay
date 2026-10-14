@@ -81,6 +81,7 @@
   .watch-wait[hidden] { display: none; }
   .watch-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .watch-buttons button { padding: 11px; }
+  .watch-buttons .end-stream { grid-column: 1 / -1; color: var(--bad); border-color: var(--bad); background: none; }
 
   html.simple .adv, html.simple #logs { display: none !important; }
   html.simple #share-row { grid-template-columns: 1fr; }
@@ -133,6 +134,33 @@
   .watch-share .hint, .watch-share .tv-link, .watch-share .tv-qr { margin: 0 auto 0 0; }
   .watch-share .tv-qr { margin: 4px auto; }
   .watch-share .tv-link { margin: 0; }
+
+  .recent { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px; display: grid; gap: 10px; }
+  .recent[hidden] { display: none; }
+  .recent .hint { margin: -6px 0 0; }
+  .recent-list { display: grid; gap: 10px; }
+  .recent-item {
+    display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+    padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg);
+  }
+  .recent-main {
+    display: grid; grid-template-columns: 52px 1fr; gap: 12px; align-items: center; padding: 0;
+    border: 0; background: none; color: var(--text); text-align: left; white-space: normal; cursor: pointer; min-width: 0;
+  }
+  .recent-thumb {
+    position: relative; width: 52px; aspect-ratio: 2 / 3; border-radius: 6px; overflow: hidden;
+    background: var(--code-bg); border: 1px solid var(--border);
+  }
+  .recent-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .recent-text { display: grid; gap: 3px; min-width: 0; }
+  .recent-title { font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .recent-sub { font-size: 13px; color: var(--muted); line-height: 1.35; }
+  .recent-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-top: 3px; }
+  .recent-bar span { display: block; height: 100%; background: var(--accent); }
+  .recent-actions { display: grid; gap: 6px; justify-items: stretch; }
+  .recent-actions button { padding: 9px 12px; font-size: 14px; }
+  .recent-actions .recent-small { padding: 4px 8px; font-size: 12px; font-weight: 500; color: var(--muted); background: none; border-color: transparent; }
+  .recent-item.busy { opacity: .55; pointer-events: none; }
 
   #pick-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 48px); padding: 18px; }
   .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; margin-top: 12px; }
@@ -311,6 +339,7 @@
     <div class="watch-buttons">
       <button id="watch-sound">Turn on sound</button>
       <button id="watch-fs" class="primary">Fullscreen</button>
+      <button id="watch-end" class="end-stream">End Stream</button>
     </div>
     <div class="tv-playback" id="tv-playback" hidden>
       <div class="tv-playback-row">
@@ -357,6 +386,12 @@
         <button id="watch-lan-copy" class="wide">Copy Wi-Fi link</button>
       </div>
     </div>
+  </section>
+
+  <section class="recent" id="recent" hidden aria-label="Recent Activity">
+    <h2>Recent Activity</h2>
+    <p class="hint" id="recent-hint">Pick up where you left off. It plays in room <span id="recent-room">1234</span>.</p>
+    <div class="recent-list" id="recent-list"></div>
   </section>
 </main>
 
@@ -722,7 +757,9 @@
     });
   }
 
-  async function runCommand() {
+  // resume: {id, startOver} to play a Recent Activity title again instead of searching.
+  async function runCommand(resume) {
+    if (resume && !currentRoom) currentRoom = $("room").value.trim().toUpperCase() || "1234";
     // This tap is what lets the phone play the live screen with sound later (browsers only
     // allow sound after a tap), so the video is unlocked for sound right now.
     if (!onThisMac) unlockSound();
@@ -749,8 +786,10 @@
       return;
     }
     try {
-      const res = await api("/run", { args: currentArgs,
-        remote: { title: $("title").value.trim(), site: $("url").value.trim(), room: currentRoom } });
+      const res = resume
+        ? await api("/resume", { id: resume.id, room: currentRoom, startOver: !!resume.startOver })
+        : await api("/run", { args: currentArgs,
+            remote: { title: $("title").value.trim(), site: $("url").value.trim(), room: currentRoom } });
       const body = res.body;
       if (!res.ok) throw new Error(body.error || "The helper refused to run it.");
       if (currentRoom) {
@@ -765,8 +804,10 @@
       following = true;
       if (!onThisMac) {
         waitForChoices(body.pid);
-        $("runcmd").textContent = "Started!";
-        setTimeout(() => $("runcmd").textContent = "Run command", 1500);
+        if (!resume) {
+          $("runcmd").textContent = "Started!";
+          setTimeout(() => $("runcmd").textContent = "Run command", 1500);
+        }
         if (currentRoom) watchRoom(currentRoom, body.publicRelay, body.relayRunning ? body.lanRelay : null);
       }
     } catch (e) {
@@ -782,7 +823,7 @@
   const savedNet = store.get("tvnet");
   if (savedNet) { const r = document.querySelector(`input[name=tvnet][value="${savedNet}"]`); if (r) r.checked = true; }
   document.querySelectorAll("input[name=tvnet]").forEach(r => r.addEventListener("change", showTvLink));
-  $("runcmd").addEventListener("click", runCommand);
+  $("runcmd").addEventListener("click", () => runCommand());
   $("tv-copy").addEventListener("click", () => copyText($("tv-link").textContent, $("tv-copy"), "Copy TV link"));
   // Opens the TV page in a new tab, e.g. to watch on this phone.
   $("tv-open").addEventListener("click", () => { const link = tvLinks[tvNet()]; if (link) window.open(link, "_blank", "noopener"); });
@@ -1115,6 +1156,28 @@
   $("np-episode").addEventListener("change", () => switchTo(+$("np-season").value, +$("np-episode").value));
 
   $("watch-stop").addEventListener("click", stopWatching);
+  // End Stream: stops the show on the Mac and the TV, not just this screen. Recent Activity
+  // keeps where it was, so it can be picked up again.
+  $("watch-end").addEventListener("click", async () => {
+    const room = watchRoomCode;
+    if (!room || !confirm(`End the stream in room ${room}? It stops on the TV too.`)) return;
+    $("watch-end").disabled = true;
+    $("watch-end").textContent = "Ending…";
+    try {
+      const res = await api("/stop", { room });
+      if (!res.ok) throw new Error(res.body.error || "Couldn't end it.");
+      clearTimeout(pickTimer);
+      pickPid = null;
+      if ($("pick-dialog").open) $("pick-dialog").close();
+      stopWatching();
+      setTimeout(refreshRecent, 500);
+    } catch (e) {
+      alert(e.message === "Failed to fetch" ? "Can't reach your Mac." : e.message);
+    } finally {
+      $("watch-end").disabled = false;
+      $("watch-end").textContent = "End Stream";
+    }
+  });
   $("watch-copy").addEventListener("click", () => copyText($("watch-link").textContent, $("watch-copy"), "Copy link"));
   $("watch-lan-copy").addEventListener("click", () => copyText($("watch-lan-link").textContent, $("watch-lan-copy"), "Copy Wi-Fi link"));
   $("watch-sound").addEventListener("click", () => {
@@ -1226,6 +1289,93 @@
     }
   });
 
+  /* ---------- Recent Activity ---------- */
+  // What was watched lately (the helper's history.json, newest first), each with where it was
+  // left: tap to play it again from there in this page's room, through the same Run as above.
+  let recentItems = [], recentShown = "", recentTimer = null;
+  const minutesLeft = s => s >= 3600 ? `${Math.floor(s / 3600)} hr ${Math.round(s % 3600 / 60)} min left` : `${Math.max(1, Math.round(s / 60))} min left`;
+  function ago(at) {
+    const s = Date.now() / 1000 - at;
+    if (s < 90) return "just now";
+    if (s < 3600) return Math.round(s / 60) + " min ago";
+    if (s < 86400) return Math.round(s / 3600) + " hr ago";
+    const d = Math.round(s / 86400);
+    return d === 1 ? "yesterday" : d < 7 ? d + " days ago" : new Date(at * 1000).toLocaleDateString();
+  }
+  // What a row says, and what its main button does.
+  function recentPlan(it) {
+    const tv = it.kind === "tv", where = tv && it.season ? `Season ${it.season}` + (it.episode ? ` · Episode ${it.episode}` : "") : "";
+    const started = it.time > 30 && it.duration > 0;
+    if (it.finished) {
+      if (tv && it.next) return { sub: [where, "watched"].filter(Boolean).join(" · "),
+                                  go: `Play S${it.next[0]} E${it.next[1]}`, startOver: false, pct: 100 };
+      return { sub: [where || (tv ? "TV show" : "Movie"), "finished"].join(" · "), go: "Watch again", startOver: true, pct: 100 };
+    }
+    if (started) return { sub: [where || (tv ? "TV show" : "Movie"), minutesLeft(it.duration - it.time)].join(" · "),
+                          go: "Resume", startOver: false, pct: Math.min(100, 100 * it.time / it.duration),
+                          at: `${clock(it.time)} of ${clock(it.duration)}` };
+    return { sub: where || (tv ? "TV show" : "Movie"), go: tv && !it.season ? "Open" : "Play", startOver: false, pct: 0 };
+  }
+  function renderRecent() {
+    $("recent-room").textContent = (currentRoom || $("room").value.trim().toUpperCase() || "1234");
+    const key = JSON.stringify(recentItems) + Math.floor(Date.now() / 60000);  // "x min ago" moves on
+    if (key === recentShown) return;
+    recentShown = key;
+    $("recent").hidden = !recentItems.length;
+    $("recent-list").innerHTML = recentItems.map(it => {
+      const plan = recentPlan(it);
+      return `<div class="recent-item" data-id="${escapeHtml(it.id)}">
+        <button class="recent-main" data-act="go" aria-label="${escapeHtml(plan.go + ": " + (it.title || ""))}">
+          <span class="recent-thumb">${it.poster ? `<img src="${escapeHtml(it.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</span>
+          <span class="recent-text">
+            <span class="recent-title">${escapeHtml(it.title || "Untitled")}</span>
+            <span class="recent-sub">${escapeHtml(plan.sub)}${plan.at ? ` (${plan.at})` : ""}</span>
+            <span class="recent-sub">${escapeHtml(ago(it.at || 0))}</span>
+            ${plan.pct ? `<span class="recent-bar"><span style="width:${plan.pct.toFixed(1)}%"></span></span>` : ""}
+          </span>
+        </button>
+        <div class="recent-actions">
+          <button class="primary" data-act="go">${escapeHtml(plan.go)}</button>
+          ${!plan.startOver && (it.time > 30 || it.finished) ? `<button class="recent-small" data-act="over">Start over</button>` : ""}
+          <button class="recent-small" data-act="forget">Remove</button>
+        </div>
+      </div>`;
+    }).join("");
+    $("recent-list").querySelectorAll("img").forEach(img => img.addEventListener("error", () => img.remove()));
+  }
+  async function refreshRecent() {
+    clearTimeout(recentTimer);
+    if (location.protocol !== "file:") {
+      try {
+        const res = await api("/history");
+        if (res.ok && Array.isArray(res.body.items)) recentItems = res.body.items.slice(0, 20);
+      } catch (e) {}
+      renderRecent();
+    }
+    recentTimer = setTimeout(refreshRecent, document.hidden ? 60000 : 10000);
+  }
+  $("recent-list").addEventListener("click", async e => {
+    const btn = e.target.closest("[data-act]"), row = e.target.closest(".recent-item");
+    if (!btn || !row) return;
+    const it = recentItems.find(x => x.id === row.dataset.id);
+    if (!it) return;
+    if (btn.dataset.act === "forget") {
+      row.classList.add("busy");
+      try { await api("/forget", { id: it.id }); } catch (err) {}
+      recentItems = recentItems.filter(x => x.id !== it.id);
+      renderRecent();
+      return;
+    }
+    const startOver = btn.dataset.act === "over" || recentPlan(it).startOver;
+    row.classList.add("busy");
+    try { await runCommand({ id: it.id, startOver }); }
+    finally { row.classList.remove("busy"); }
+    window.scrollTo({ top: 0, behavior: "smooth" });  // the live screen is up top
+    setTimeout(refreshRecent, 3000);
+  });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshRecent(); });
+  $("room").addEventListener("input", renderRecent);
+
   /* ---------- Open on my phone ---------- */
   // Only on this Mac (http://localhost:8766): the helper hands out the phone link, which
   // holds the key that lets the phone in.
@@ -1251,6 +1401,7 @@
   $("phone-close").addEventListener("click", () => $("phone-dialog").close());
   $("remote-copy").addEventListener("click", () => copyText($("remote-link").textContent, $("remote-copy"), "Copy remote link"));
   build();
+  refreshRecent();
 
   /* ---------- Logs ---------- */
   // search.py rewrites logs.js (next to this page) as it runs. It's re-loaded every
