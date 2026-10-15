@@ -400,8 +400,8 @@
   <h2 id="room-title">Room in use</h2>
   <p class="dlg-status" id="room-message"></p>
   <button id="room-yes" class="primary wide">Yes</button>
+  <button id="room-no" class="wide">Cancel</button>
   <button id="room-end" class="wide end-stream">End Stream</button>
-  <button id="room-no" class="wide">No</button>
 </dialog>
 
 <dialog id="pass-dialog" aria-labelledby="pass-title">
@@ -753,7 +753,6 @@
       $("room-end").textContent = `End Stream in Room ${room}`;
       $("room-yes").hidden = !st.next;
       $("room-yes").textContent = st.next ? `Yes, use Room ${st.next}` : "Yes";
-      $("room-no").textContent = st.next ? "No" : "OK";
       const done = answer => { $("room-dialog").close(); resolve(answer); };
       $("room-yes").onclick = () => done("next");
       $("room-end").onclick = () => done("end");
