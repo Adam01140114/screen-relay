@@ -81,6 +81,7 @@
   .watch-wait[hidden] { display: none; }
   .watch-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .watch-buttons button { padding: 11px; }
+  #room-dialog .end-stream { color: var(--bad); border-color: var(--bad); background: none; }
   .watch-buttons .end-stream { grid-column: 1 / -1; color: var(--bad); border-color: var(--bad); background: none; }
 
   html.simple .adv, html.simple #logs { display: none !important; }
@@ -399,6 +400,7 @@
   <h2 id="room-title">Room in use</h2>
   <p class="dlg-status" id="room-message"></p>
   <button id="room-yes" class="primary wide">Yes</button>
+  <button id="room-end" class="wide end-stream">End Stream</button>
   <button id="room-no" class="wide">No</button>
 </dialog>
 
@@ -738,19 +740,23 @@
   }
 
   // A room that's already showing something: say what, and offer the next free room.
-  // Resolves true to use that room instead, false to cancel.
+  // Resolves "next" to use that room instead, "end" to end what's playing there and use this
+  // room, or false to cancel.
   function askRoomSwitch(room, st) {
     return new Promise(resolve => {
       const what = [st.title || "something",
                     st.season ? "Season " + st.season : "", st.episode ? "Episode " + st.episode : ""]
         .filter(Boolean).join(", ");
       $("room-message").textContent = `Room ${room} is currently being used to watch ${what}.`
-        + (st.next ? ` Would you like to switch to the next available room (Room ${st.next})?` : " There's no free room to switch to.");
+        + (st.next ? ` Would you like to switch to the next available room (Room ${st.next})?` : " There's no free room to switch to.")
+        + ` Or end that stream and play here in Room ${room}.`;
+      $("room-end").textContent = `End Stream in Room ${room}`;
       $("room-yes").hidden = !st.next;
       $("room-yes").textContent = st.next ? `Yes, use Room ${st.next}` : "Yes";
       $("room-no").textContent = st.next ? "No" : "OK";
       const done = answer => { $("room-dialog").close(); resolve(answer); };
-      $("room-yes").onclick = () => done(true);
+      $("room-yes").onclick = () => done("next");
+      $("room-end").onclick = () => done("end");
       $("room-no").onclick = () => done(false);
       $("room-dialog").oncancel = () => resolve(false);
       $("room-dialog").showModal();
@@ -767,9 +773,21 @@
       let st = null;
       try { st = (await api("/room-status?room=" + encodeURIComponent(currentRoom))).body; } catch (e) {}
       if (st && st.busy) {
-        if (!(await askRoomSwitch(currentRoom, st))) return;
-        $("room").value = st.next;
-        build();  // the command now uses the new room
+        const answer = await askRoomSwitch(currentRoom, st);
+        if (!answer) return;
+        if (answer === "end") {
+          try {
+            const res = await api("/stop", { room: currentRoom });
+            if (!res.ok) throw new Error(res.body.error || "Couldn't end it.");
+          } catch (e) {
+            alert(e.message === "Failed to fetch" ? "Can't reach your Mac." : e.message);
+            return;
+          }
+          if (watchRoomCode === currentRoom) stopWatching();  // reconnects to the new run below
+        } else {
+          $("room").value = st.next;
+          build();  // the command now uses the new room
+        }
       }
     }
     tvLinks = { public: null, lan: null };
