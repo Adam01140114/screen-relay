@@ -125,6 +125,7 @@
   .now-playing label { margin: 8px 0 4px; font-size: 13px; }
   .now-playing select { width: 100%; padding: 10px; font: inherit; font-size: 16px; }
   .np-pair { gap: 10px; }
+  .now-playing option.watched { color: var(--muted); }
   #np-server-row[hidden], #np-episode-row[hidden] { display: none; }
   .watch-share { display: grid; gap: 8px; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
   .watch-share[hidden] { display: none; }
@@ -162,6 +163,8 @@
   .recent-actions button { padding: 9px 12px; font-size: 14px; }
   .recent-actions .recent-small { padding: 4px 8px; font-size: 12px; font-weight: 500; color: var(--muted); background: none; border-color: transparent; }
   .recent-item.busy { opacity: .55; pointer-events: none; }
+  .recent-actions .end-stream { color: var(--bad); border-color: var(--bad); background: none; }
+  .recent-live { font-size: 13px; font-weight: 600; color: var(--bad); }
 
   #pick-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 48px); padding: 18px; }
   .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; margin-top: 12px; }
@@ -196,6 +199,10 @@
   .pick-row:disabled { opacity: .4; }
   .pick-row-title { font-weight: 600; }
   .pick-row-sub { font-weight: 400; font-size: 13px; color: var(--muted); }
+  /* Seen before: greyed out, still pickable to watch again. */
+  .pick-row.watched, .pick-card.watched { opacity: .45; }
+  .pick-row.watched .pick-row-title::after { content: "  ✓ Watched"; font-weight: 500; font-size: 13px; }
+  .pick-badge.seen { left: auto; right: 6px; background: rgba(0, 0, 0, .75); color: #fff; }
 
   .remote-status { margin: -8px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
   .remote-status.ok { color: var(--ok); }
@@ -1021,8 +1028,9 @@
         const seasons = np.seasons.length ? np.seasons : [[np.season, "Season " + np.season]];
         $("np-season").innerHTML = seasons.map(([n, label]) =>
           `<option value="${n}" ${n === np.season ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+        const seen = new Set(np.watched || []);  // seen before: greyed out, marked ✓
         $("np-episode").innerHTML = np.episodes.map(([n, name]) =>
-          `<option value="${n}" ${n === np.episode ? "selected" : ""}>Episode ${n}${name ? " · " + escapeHtml(name) : ""}</option>`).join("");
+          `<option value="${n}" ${n === np.episode ? "selected" : ""}${seen.has(n) ? ' class="watched"' : ""}>${seen.has(n) ? "✓ " : ""}Episode ${n}${name ? " · " + escapeHtml(name) : ""}${seen.has(n) ? " (watched)" : ""}</option>`).join("");
         $("np-season").disabled = $("np-episode").disabled = false;
       }
     }
@@ -1273,14 +1281,15 @@
     $("pick-status").className = "dlg-status";
     $("pick-grid").className = list ? "pick-list" : "pick-grid";
     $("pick-grid").innerHTML = list ? data.items.map((it, i) => `
-      <button class="pick-row" data-index="${i}">
+      <button class="pick-row${it.watched ? " watched" : ""}" data-index="${i}">
         <span class="pick-row-title">${escapeHtml(it.title)}</span>
         ${it.subtitle ? `<span class="pick-row-sub">${escapeHtml(it.subtitle)}</span>` : ""}
       </button>`).join("") : resultSections(data.items, (it, i) => `
-      <button class="pick-card" data-index="${i}">
+      <button class="pick-card${it.watched ? " watched" : ""}" data-index="${i}">
         <span class="pick-poster">
           ${it.poster ? `<img src="${escapeHtml(it.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}
           <span class="pick-badge ${it.kind === "tv" ? "tv" : ""}">${it.kind === "tv" ? "TV" : "Movie"}</span>
+          ${it.watched ? `<span class="pick-badge seen">✓ Watched</span>` : ""}
         </span>
         <span class="pick-name">${escapeHtml(it.title)}</span>
       </button>`);
@@ -1347,13 +1356,15 @@
           <span class="recent-text">
             <span class="recent-title">${escapeHtml(it.title || "Untitled")}</span>
             <span class="recent-sub">${escapeHtml(plan.sub)}${plan.at ? ` (${plan.at})` : ""}</span>
-            <span class="recent-sub">${escapeHtml(ago(it.at || 0))}</span>
+            ${(it.live || []).length ? `<span class="recent-live">● Streaming now in Room ${escapeHtml(it.live.join(", "))}</span>`
+              : `<span class="recent-sub">${escapeHtml(ago(it.at || 0))}</span>`}
             ${plan.pct ? `<span class="recent-bar"><span style="width:${plan.pct.toFixed(1)}%"></span></span>` : ""}
           </span>
         </button>
         <div class="recent-actions">
           <button class="primary" data-act="go">${escapeHtml(plan.go)}</button>
           ${!plan.startOver && (it.time > 30 || it.finished) ? `<button class="recent-small" data-act="over">Start over</button>` : ""}
+          ${(it.live || []).map(room => `<button class="end-stream" data-act="end" data-room="${escapeHtml(room)}">End Stream${it.live.length > 1 ? " (" + escapeHtml(room) + ")" : ""}</button>`).join("")}
           <button class="recent-small" data-act="forget">Remove</button>
         </div>
       </div>`;
@@ -1376,6 +1387,21 @@
     if (!btn || !row) return;
     const it = recentItems.find(x => x.id === row.dataset.id);
     if (!it) return;
+    if (btn.dataset.act === "end") {  // stop it streaming, wherever it is (not just this screen)
+      const room = btn.dataset.room;
+      if (!confirm(`End the stream in room ${room}? It stops on the TV too.`)) return;
+      row.classList.add("busy");
+      try {
+        const res = await api("/stop", { room });
+        if (!res.ok) throw new Error(res.body.error || "Couldn't end it.");
+        if (watchRoomCode === room) stopWatching();
+      } catch (err) {
+        alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
+      }
+      row.classList.remove("busy");
+      refreshRecent();
+      return;
+    }
     if (btn.dataset.act === "forget") {
       row.classList.add("busy");
       try { await api("/forget", { id: it.id }); } catch (err) {}
