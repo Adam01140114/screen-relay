@@ -180,15 +180,50 @@ function hiFiAudio(sdp) {
         .concat(["stereo=1", "sprop-stereo=1", "maxaveragebitrate=510000"]).join(";"));
 }
 // Lets the computer's sender use far more bandwidth than the browser's default allows.
-function boostSender(pc) {
+// Which way a connection's media goes: "lan" (same network: both ends' own addresses),
+// "relay" (through a TURN relay server), or "internet" (directly, across the internet).
+async function connectionPath(pc) {
+  try {
+    const stats = await pc.getStats();
+    let pair = null;
+    stats.forEach((s) => { if (s.type === "transport" && s.selectedCandidatePairId) pair = stats.get(s.selectedCandidatePairId); });
+    if (!pair) stats.forEach((s) => { if (s.type === "candidate-pair" && s.nominated && s.state === "succeeded") pair = s; });
+    if (!pair) return null;
+    const local = stats.get(pair.localCandidateId) || {}, remote = stats.get(pair.remoteCandidateId) || {};
+    if (local.candidateType === "relay" || remote.candidateType === "relay") return "relay";
+    const privateAddr = (a) => !a || /\.local$/i.test(a) || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|fe80:|fd|fc)/i.test(a);
+    if (local.candidateType === "host" && remote.candidateType === "host"
+        && privateAddr(local.address || local.ip) && privateAddr(remote.address || remote.ip)) return "lan";
+    return "internet";
+  } catch { return null; }
+}
+// Watching over the internet: hold about half a second of video and sound before playing,
+// so the network's hiccups are smoothed out instead of showing as stutters. On the same
+// Wi-Fi it plays straight away.
+async function smoothPlayback(pc) {
+  const path = await connectionPath(pc);
+  const ms = path === "lan" ? 0 : path ? 500 : null;
+  if (ms === null) return;
+  for (const r of pc.getReceivers()) {
+    try { r.jitterBufferTarget = ms; } catch {}
+    try { r.playoutDelayHint = ms / 1000; } catch {}
+  }
+}
+// How each screen is sent the picture, by the way its connection goes. On the same Wi-Fi:
+// full quality, and when bandwidth is short it drops frames rather than sharpness. Across the
+// internet (bandwidth that comes and goes, a home upload shared by every screen): a bitrate
+// the upload can keep up, and smooth motion first, letting sharpness ease off when it dips.
+const INTERNET_VIDEO_BITRATE = 4000000, RELAY_VIDEO_BITRATE = 2500000;
+async function boostSender(pc) {
+  const path = await connectionPath(pc);
   for (const sender of pc.getSenders()) {
     if (!sender.track) continue;
     const params = sender.getParameters();
     if (!params.encodings || !params.encodings.length) params.encodings = [{}];
     if (sender.track.kind === "video") {
-      // When bandwidth is short, drop frames rather than resolution: a blurry movie is worse.
-      params.degradationPreference = "maintain-resolution";
-      params.encodings[0].maxBitrate = VIDEO_MAX_BITRATE;
+      const remote = path === "internet" || path === "relay";
+      params.degradationPreference = remote ? "balanced" : "maintain-resolution";
+      params.encodings[0].maxBitrate = path === "relay" ? RELAY_VIDEO_BITRATE : remote ? INTERNET_VIDEO_BITRATE : VIDEO_MAX_BITRATE;
       params.encodings[0].maxFramerate = 30;
     } else {
       params.encodings[0].maxBitrate = AUDIO_MAX_BITRATE;
@@ -282,7 +317,10 @@ async function startShare(code) {
     v.call.on("close", () => drop(target, v));
     const pc = v.call.peerConnection;
     if (pc) pc.addEventListener("connectionstatechange", () => {
-      if (pc.connectionState === "connected") { v.live = true; refreshState(); boostSender(pc); }
+      if (pc.connectionState === "connected") {
+        v.live = true; refreshState(); boostSender(pc);
+        setTimeout(() => boostSender(pc), 5000);  // the path can settle on a better one at first
+      }
       if (["failed", "closed"].includes(pc.connectionState)) drop(target, v);
     });
   }
@@ -416,7 +454,7 @@ function openTvPeer() {
     if (tvCall) tvCall.close();
     tvCall = call;
     call.answer(undefined, { sdpTransform: hiFiAudio });
-    call.on("stream", (s) => playOnTv(s));
+    call.on("stream", (s) => { playOnTv(s); if (call.peerConnection) smoothPlayback(call.peerConnection); });
     call.on("close", () => { if (tvCall === call) endTvStream(); });
     const pc = call.peerConnection;
     if (pc) pc.addEventListener("connectionstatechange", () => {

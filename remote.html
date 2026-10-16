@@ -895,6 +895,36 @@
     $("watch").hidden = true;
   }
 
+  // Which way a connection's media goes: "lan" (same network: both ends' own addresses),
+  // "relay" (through a TURN relay server), or "internet" (directly, across the internet).
+  async function connectionPath(pc) {
+    try {
+      const stats = await pc.getStats();
+      let pair = null;
+      stats.forEach((s) => { if (s.type === "transport" && s.selectedCandidatePairId) pair = stats.get(s.selectedCandidatePairId); });
+      if (!pair) stats.forEach((s) => { if (s.type === "candidate-pair" && s.nominated && s.state === "succeeded") pair = s; });
+      if (!pair) return null;
+      const local = stats.get(pair.localCandidateId) || {}, remote = stats.get(pair.remoteCandidateId) || {};
+      if (local.candidateType === "relay" || remote.candidateType === "relay") return "relay";
+      const privateAddr = (a) => !a || /\.local$/i.test(a) || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|fe80:|fd|fc)/i.test(a);
+      if (local.candidateType === "host" && remote.candidateType === "host"
+          && privateAddr(local.address || local.ip) && privateAddr(remote.address || remote.ip)) return "lan";
+      return "internet";
+    } catch { return null; }
+  }
+  // Watching over the internet: hold about half a second of video and sound before playing,
+  // so the network's hiccups are smoothed out instead of showing as stutters. On the same
+  // Wi-Fi it plays straight away.
+  async function smoothPlayback(pc) {
+    const path = await connectionPath(pc);
+    const ms = path === "lan" ? 0 : path ? 500 : null;
+    if (ms === null) return;
+    for (const r of pc.getReceivers()) {
+      try { r.jitterBufferTarget = ms; } catch {}
+      try { r.playoutDelayHint = ms / 1000; } catch {}
+    }
+  }
+
   function openWatchPeer() {
     watchTimer = null;
     if (!watchRoomCode) return;
@@ -907,6 +937,7 @@
       call.answer(undefined, { sdpTransform: hiFiAudio });
       call.on("stream", st => {
         if (wv.srcObject !== st) wv.srcObject = st;
+        if (call.peerConnection) smoothPlayback(call.peerConnection);
         $("watch-wait").hidden = true;
         setWatch("live", "Live · room " + watchRoomCode);
         $("watch-sound").hidden = !st.getAudioTracks().length;
