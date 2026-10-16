@@ -234,7 +234,10 @@ async function startShare(code) {
     stream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 30, width: { ideal: 1920 }, height: { ideal: 1080 } },
       // Raw computer sound: no voice-call processing, which muffles music and video.
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false },
+      // ?mutehere (the Mac's search script): the shared tab goes silent on this computer, while
+      // its sound still goes to the TV and phones. Sharing by hand keeps the sound here too.
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+               suppressLocalAudioPlayback: new URLSearchParams(location.search).has("mutehere") },
       systemAudio: "include",
     });
   } catch {
