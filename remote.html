@@ -349,12 +349,13 @@
       <button id="watch-fs" class="primary">Fullscreen</button>
       <button id="watch-end" class="end-stream">End Stream</button>
     </div>
-    <div class="tv-playback" id="tv-playback" hidden>
+    <div class="tv-playback" id="tv-playback">
       <div class="tv-playback-row">
         <button id="tv-playpause" class="primary">Pause</button>
         <span class="tv-time" id="tv-time">0:00 / 0:00</span>
       </div>
       <input type="range" class="tv-range" id="tv-progress" min="0" max="1" step="1" value="0" aria-label="Where in the video">
+      <p class="hint" id="tv-msg" hidden></p>
     </div>
     <div class="tv-volume">
       <label for="tv-volume">TV volume</label>
@@ -1115,7 +1116,14 @@
   const pbNow = () => pb ? Math.min(pb.duration || Infinity, pb.time + (pb.paused ? 0 : (Date.now() - pb.received) / 1000)) : 0;
 
   function drawPlayback() {
-    if (!pb) return;
+    $("tv-progress").disabled = !pb;
+    if (!pb) {  // nothing reported yet: the button still works (it plays or pauses whatever is on)
+      $("tv-time").textContent = "–:–– / –:––";
+      $("tv-playpause").textContent = "Pause / Play";
+      $("tv-progress").value = 0;
+      setFill($("tv-progress"));
+      return;
+    }
     const t = pbDragging ? +$("tv-progress").value : pbNow();
     if (!pbDragging) {
       $("tv-progress").max = Math.max(1, Math.round(pb.duration || 0));
@@ -1127,25 +1135,29 @@
   }
 
   function updatePlayback(report) {
-    $("tv-playback").hidden = !report || !report.duration;
-    if (!report || !report.duration) { pb = null; return; }
+    if (!report || !report.duration) { pb = null; drawPlayback(); return; }
     pb = { time: report.time, duration: report.duration, paused: report.paused, received: Date.now() };
     drawPlayback();
   }
   setInterval(drawPlayback, 500);
 
+  let tvMsgTimer = null;
   async function sendControl(action, time) {
     try {
       const res = await api("/control", { room: watchRoomCode, action, time });
       if (!res.ok) throw new Error(res.body.error || "Couldn't reach the TV's video.");
+      $("tv-msg").hidden = true;
     } catch (e) {
-      $("np-status").textContent = e.message === "Failed to fetch" ? "Can't reach your Mac." : e.message;
-      $("np-status").className = "hint bad-text";
+      $("tv-msg").textContent = e.message === "Failed to fetch" ? "Can't reach your Mac." : e.message;
+      $("tv-msg").className = "hint bad-text";
+      $("tv-msg").hidden = false;
+      clearTimeout(tvMsgTimer);
+      tvMsgTimer = setTimeout(() => { $("tv-msg").hidden = true; }, 6000);
     }
   }
 
   $("tv-playpause").addEventListener("click", () => {
-    if (!pb) return;
+    if (!pb) { sendControl("toggle"); return; }
     const action = pb.paused ? "play" : "pause";
     pb = { ...pb, time: pbNow(), paused: !pb.paused, received: Date.now() };  // show it right away
     drawPlayback();
@@ -1445,6 +1457,19 @@
   $("remote-copy").addEventListener("click", () => copyText($("remote-link").textContent, $("remote-copy"), "Copy remote link"));
   build();
   refreshRecent();
+  drawPlayback();
+  // Opened (or reloaded) while this room is streaming: join it straight away, so the live
+  // screen and Pause/Play are there without pressing Run again.
+  (async () => {
+    if (onThisMac || location.protocol === "file:") return;
+    const room = currentRoom || $("room").value.trim().toUpperCase();
+    if (!room) return;
+    let st = null, links = {};
+    try { st = (await api("/room-status?room=" + encodeURIComponent(room))).body; } catch (e) {}
+    if (!st || !st.busy || watchRoomCode) return;
+    if (!REMOTE) try { links = await (await fetch("/info", { cache: "no-store" })).json(); } catch (e) {}
+    watchRoom(room, links.publicRelay || "https://tvshare.onrender.com/", links.relayRunning ? links.lanRelay : null);
+  })();
 
   /* ---------- Logs ---------- */
   // search.py rewrites logs.js (next to this page) as it runs. It's re-loaded every
