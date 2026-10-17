@@ -177,7 +177,12 @@
   .recent-actions .end-stream { color: var(--bad); border-color: var(--bad); background: none; }
   .recent-live { font-size: 13px; font-weight: 600; color: var(--bad); }
 
-  #pick-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 48px); padding: 18px; }
+  /* The heading stays put; only the results scroll, in a box about 60% of the screen tall. */
+  #pick-dialog { width: min(560px, calc(100vw - 24px)); max-height: min(60vh, 560px); max-height: min(60dvh, 560px);
+                 padding: 18px; overflow: hidden; }
+  #pick-dialog[open] { display: flex; flex-direction: column; }
+  #pick-dialog #pick-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+                            -webkit-overflow-scrolling: touch; padding: 2px 2px 4px; }
   .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; margin-top: 12px; }
   .pick-card {
     display: grid; gap: 6px; padding: 0; border: 0; background: none; color: var(--text);
