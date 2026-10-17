@@ -119,7 +119,15 @@
   .tv-playback[hidden] { display: none; }
   .tv-playback-row { display: flex; align-items: center; gap: 12px; }
   .tv-playback-row button { min-width: 96px; padding: 11px 14px; }
-  .tv-time { font: 600 15px ui-monospace, Menlo, monospace; color: var(--muted); }
+  .tv-time { font: 600 15px ui-monospace, Menlo, monospace; color: var(--muted); display: inline-flex; align-items: center; white-space: nowrap; }
+  /* The current time: tap it to type a time to jump to. */
+  .tv-time-input {
+    width: 7.5ch; padding: 6px 6px; font: inherit; color: var(--text); text-align: right;
+    background: transparent; border: 1px dashed var(--border); border-radius: 6px;
+  }
+  .tv-time-input:focus { background: var(--bg); border-style: solid; outline: 2px solid var(--accent); outline-offset: -1px; }
+  .tv-skip-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .tv-skip-row button { padding: 11px; font-weight: 600; }
   .now-playing { display: grid; gap: 4px; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
   .now-playing[hidden] { display: none; }
   .now-playing label { margin: 8px 0 4px; font-size: 13px; }
@@ -352,9 +360,14 @@
     <div class="tv-playback" id="tv-playback">
       <div class="tv-playback-row">
         <button id="tv-playpause" class="primary">Pause</button>
-        <span class="tv-time" id="tv-time">0:00 / 0:00</span>
+        <span class="tv-time"><input type="text" id="tv-time-input" class="tv-time-input" inputmode="decimal"
+          autocomplete="off" spellcheck="false" aria-label="Jump to a time (like 1:02:30)" value="0:00"><span id="tv-time-total"> / 0:00</span></span>
       </div>
       <input type="range" class="tv-range" id="tv-progress" min="0" max="1" step="1" value="0" aria-label="Where in the video">
+      <div class="tv-skip-row">
+        <button id="tv-back10" aria-label="Back 10 seconds">« 10s</button>
+        <button id="tv-fwd10" aria-label="Forward 10 seconds">10s »</button>
+      </div>
       <p class="hint" id="tv-msg" hidden></p>
     </div>
     <div class="tv-volume">
@@ -1149,7 +1162,8 @@
   function drawPlayback() {
     $("tv-progress").disabled = !pb;
     if (!pb) {  // nothing reported yet: the button still works (it plays or pauses whatever is on)
-      $("tv-time").textContent = "–:–– / –:––";
+      if (document.activeElement !== $("tv-time-input")) $("tv-time-input").value = "–:––";
+      $("tv-time-total").textContent = " / –:––";
       $("tv-playpause").textContent = "Pause / Play";
       $("tv-progress").value = 0;
       setFill($("tv-progress"));
@@ -1161,7 +1175,8 @@
       $("tv-progress").value = Math.round(t);
     }
     setFill($("tv-progress"));
-    $("tv-time").textContent = clock(t) + " / " + clock(pb.duration);
+    if (document.activeElement !== $("tv-time-input")) $("tv-time-input").value = clock(t);  // not while typing
+    $("tv-time-total").textContent = " / " + clock(pb.duration);
     $("tv-playpause").textContent = pb.paused ? "Play" : "Pause";
   }
 
@@ -1193,6 +1208,48 @@
     pb = { ...pb, time: pbNow(), paused: !pb.paused, received: Date.now() };  // show it right away
     drawPlayback();
     sendControl(action);
+  });
+  // Jump to a moment: shows it straight away, then tells the Mac.
+  function seekTo(to) {
+    if (!pb) return;
+    to = Math.max(0, Math.min(to, (pb.duration || to) - 1));
+    pb = { ...pb, time: to, received: Date.now() };
+    drawPlayback();
+    sendControl("seek", to);
+  }
+  $("tv-back10").addEventListener("click", () => seekTo(pbNow() - 10));
+  $("tv-fwd10").addEventListener("click", () => seekTo(pbNow() + 10));
+  // The time box: "1:02:30", "62:30" or "90" (seconds). Enter (or leaving it) jumps there.
+  const parseClock = text => {
+    const parts = String(text).trim().split(/[:.\s]+/).filter(Boolean);
+    if (!parts.length || parts.length > 3 || parts.some(p => !/^\d+$/.test(p))) return null;
+    return parts.reduce((total, p) => total * 60 + parseInt(p, 10), 0);
+  };
+  // Tapping it empties it (the current time stays as the grey hint), so what's typed replaces it.
+  $("tv-time-input").addEventListener("focus", () => {
+    $("tv-time-input").placeholder = $("tv-time-input").value;
+    $("tv-time-input").value = "";
+  });
+  $("tv-time-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); $("tv-time-input").blur(); }
+    if (e.key === "Escape") { $("tv-time-input").dataset.cancel = "1"; $("tv-time-input").blur(); }
+  });
+  $("tv-time-input").addEventListener("blur", () => {
+    const cancel = $("tv-time-input").dataset.cancel;
+    delete $("tv-time-input").dataset.cancel;
+    const typed = $("tv-time-input").value.trim();
+    const to = parseClock(typed);
+    const tooLate = to !== null && pb && pb.duration && to >= pb.duration;
+    if (!cancel && to !== null && !tooLate && pb && Math.abs(to - pbNow()) >= 1) seekTo(to);
+    else if (!cancel && typed && (to === null || tooLate)) {
+      $("tv-msg").textContent = tooLate ? `That's past the end (it's ${clock(pb.duration)} long).`
+        : "Type a time like 1:02:30 or 45:10 (dots work too: 45.10), or seconds like 90.";
+      $("tv-msg").className = "hint bad-text";
+      $("tv-msg").hidden = false;
+      clearTimeout(tvMsgTimer);
+      tvMsgTimer = setTimeout(() => { $("tv-msg").hidden = true; }, 5000);
+    }
+    drawPlayback();
   });
   $("tv-progress").addEventListener("input", () => { pbDragging = true; drawPlayback(); });
   $("tv-progress").addEventListener("change", () => {
