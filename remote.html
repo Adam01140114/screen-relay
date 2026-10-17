@@ -777,7 +777,7 @@
         + ` Or end that stream and play here in Room ${room}.`;
       $("room-end").textContent = `End Stream in Room ${room}`;
       $("room-yes").hidden = !st.next;
-      $("room-yes").textContent = st.next ? `Yes, use Room ${st.next}` : "Yes";
+      $("room-yes").textContent = st.next ? `Use Room ${st.next}` : "Yes";
       const done = answer => { $("room-dialog").close(); resolve(answer); };
       $("room-yes").onclick = () => done("next");
       $("room-end").onclick = () => done("end");
