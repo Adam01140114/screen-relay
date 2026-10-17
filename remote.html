@@ -81,7 +81,6 @@
   .watch-wait[hidden] { display: none; }
   .watch-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .watch-buttons button { padding: 11px; }
-  #room-dialog .end-stream { color: var(--bad); border-color: var(--bad); background: none; }
   .watch-buttons .end-stream { grid-column: 1 / -1; color: var(--bad); border-color: var(--bad); background: none; }
 
   html.simple .adv, html.simple #logs { display: none !important; }
@@ -420,9 +419,9 @@
 <dialog id="room-dialog" aria-labelledby="room-title">
   <h2 id="room-title">Room in use</h2>
   <p class="dlg-status" id="room-message"></p>
+  <button id="room-end" class="primary wide">End Stream</button>
   <button id="room-yes" class="primary wide">Yes</button>
   <button id="room-no" class="wide">Cancel</button>
-  <button id="room-end" class="wide end-stream">End Stream</button>
 </dialog>
 
 <dialog id="pass-dialog" aria-labelledby="pass-title">
