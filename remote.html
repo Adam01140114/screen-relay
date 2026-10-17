@@ -125,6 +125,10 @@
     background: transparent; border: 1px dashed var(--border); border-radius: 6px;
   }
   .tv-time-input:focus { background: var(--bg); border-style: solid; outline: 2px solid var(--accent); outline-offset: -1px; }
+  /* What the Mac just did by itself (a stuck video reloaded, another server tried). */
+  .tv-notice { margin: 6px 0 0; padding: 8px 10px; border-radius: 8px; font-size: 13px;
+               background: var(--warn-bg); color: var(--warn-text); }
+  .tv-notice[hidden] { display: none; }
   .tv-skip-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
   .tv-skip-row button { padding: 11px; font-weight: 600; }
   .now-playing { display: grid; gap: 4px; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
@@ -368,6 +372,7 @@
         <button id="tv-fwd10" aria-label="Forward 10 seconds">10s »</button>
       </div>
       <p class="hint" id="tv-msg" hidden></p>
+      <p class="tv-notice" id="tv-notice" role="status" hidden></p>
     </div>
     <div class="tv-volume">
       <label for="tv-volume">TV volume</label>
@@ -1050,6 +1055,8 @@
     let np = {};
     try { np = (await api("/now-playing?room=" + encodeURIComponent(watchRoomCode))).body || {}; } catch (e) {}
     updatePlayback(np.playback);
+    $("tv-notice").hidden = !np.notice;
+    if (np.notice) $("tv-notice").textContent = np.notice.text;
     const key = JSON.stringify({ ...np, playback: undefined });
     if (!npBusy && key !== npShown) {
       npShown = key;
