@@ -81,6 +81,7 @@
   .watch-wait[hidden] { display: none; }
   .watch-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .watch-buttons button { padding: 11px; }
+  .watch-buttons .watch-wide { grid-column: 1 / -1; }
   .watch-buttons .end-stream { grid-column: 1 / -1; color: var(--bad); border-color: var(--bad); background: none; }
 
   html.simple .adv, html.simple #logs { display: none !important; }
@@ -369,7 +370,8 @@
     </div>
     <div class="watch-buttons">
       <button id="watch-sound">Turn on sound</button>
-      <button id="watch-fs" class="primary">Fullscreen</button>
+      <button id="watch-fs" class="primary" title="Fullscreen on the TV (the Mac's page)">Fullscreen</button>
+      <button id="watch-here" class="primary watch-wide">Watch Stream</button>
       <button id="watch-end" class="end-stream">End Stream</button>
     </div>
     <div class="tv-playback" id="tv-playback">
@@ -1175,6 +1177,7 @@
   // moves on by itself while it's playing. Pause/Play and dragging the bar are sent to the
   // Mac, which does it on the video itself.
   let pb = null, pbDragging = false;
+  let fsPendingUntil = 0;  // the Fullscreen label says what's happening until the Mac reports back
   const clock = t => { t = Math.max(0, Math.floor(t || 0));
     const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, sec = String(t % 60).padStart(2, "0");
     return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`; };
@@ -1199,11 +1202,13 @@
     if (document.activeElement !== $("tv-time-input")) $("tv-time-input").value = clock(t);  // not while typing
     $("tv-time-total").textContent = " / " + clock(pb.duration);
     $("tv-playpause").textContent = pb.paused ? "Play" : "Pause";
+    if (Date.now() > fsPendingUntil) $("watch-fs").textContent = pb.fullscreen ? "Exit fullscreen" : "Fullscreen";
   }
 
   function updatePlayback(report) {
     if (!report || !report.duration) { pb = null; drawPlayback(); return; }
-    pb = { time: report.time, duration: report.duration, paused: report.paused, received: Date.now() };
+    pb = { time: report.time, duration: report.duration, paused: report.paused, fullscreen: report.fullscreen,
+           received: Date.now() };
     drawPlayback();
   }
   setInterval(drawPlayback, 500);
@@ -1344,7 +1349,15 @@
   document.addEventListener("webkitfullscreenchange", () => { if (!document.webkitFullscreenElement) keepLivePlaying(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepLivePlaying(); });
 
+  // Fullscreen: the show's player on the Mac's page (what the TV shows) goes in or out of
+  // fullscreen. Watch Stream: this phone shows the live screen fullscreen.
   $("watch-fs").addEventListener("click", () => {
+    unlockSound();
+    $("watch-fs").textContent = pb && pb.fullscreen ? "Leaving fullscreen…" : "Going fullscreen…";
+    fsPendingUntil = Date.now() + 4000;
+    sendControl("fullscreen");
+  });
+  $("watch-here").addEventListener("click", () => {
     const frame = wv.parentElement;
     if (wv.webkitEnterFullscreen && !frame.requestFullscreen) wv.webkitEnterFullscreen();  // iPhone
     else if (frame.requestFullscreen) frame.requestFullscreen().catch(() => wv.webkitEnterFullscreen && wv.webkitEnterFullscreen());
