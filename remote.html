@@ -174,6 +174,13 @@
   .recent-actions button { padding: 9px 12px; font-size: 14px; }
   .recent-actions .recent-small { padding: 4px 8px; font-size: 12px; font-weight: 500; color: var(--muted); background: none; border-color: transparent; }
   .recent-item.busy { opacity: .55; pointer-events: none; }
+  .recent-stars { grid-column: 1 / -1; display: flex; align-items: center; gap: 2px; margin: -2px 0 0 60px; }
+  .recent-stars button {
+    padding: 2px 3px; border: 0; background: none; font-size: 22px; line-height: 1; color: var(--border); cursor: pointer;
+  }
+  .recent-stars button.on { color: #f5b301; }
+  .recent-stars .recent-stars-label { font-size: 12px; color: var(--muted); margin-left: 6px; }
+  .recent-more { margin-top: 2px; }
   .recent-actions .end-stream { color: var(--bad); border-color: var(--bad); background: none; }
   .recent-live { font-size: 13px; font-weight: 600; color: var(--bad); }
 
@@ -410,11 +417,13 @@
       <div class="tv-qr" id="watch-qr" aria-label="QR code for the watch link"></div>
       <div class="tv-link" id="watch-link"></div>
       <button id="watch-copy" class="wide">Copy link</button>
+      <button id="watch-open" class="wide">Open in new tab</button>
       <div class="watch-lan" id="watch-lan" hidden>
         <span class="watch-share-label">On my Wi-Fi</span>
         <p class="hint">For people on the same Wi-Fi as this Mac: loads straight from the Mac.</p>
         <div class="tv-link" id="watch-lan-link"></div>
         <button id="watch-lan-copy" class="wide">Copy Wi-Fi link</button>
+        <button id="watch-lan-open" class="wide">Open in new tab</button>
       </div>
     </div>
   </section>
@@ -423,6 +432,7 @@
     <h2>Recent Activity</h2>
     <p class="hint" id="recent-hint">Pick up where you left off. It plays in room <span id="recent-room">1234</span>.</p>
     <div class="recent-list" id="recent-list"></div>
+    <button id="recent-more" class="wide recent-more" hidden>Show more</button>
   </section>
 </main>
 
@@ -1315,6 +1325,8 @@
     }
   });
   $("watch-copy").addEventListener("click", () => copyText($("watch-link").textContent, $("watch-copy"), "Copy link"));
+  $("watch-open").addEventListener("click", () => { const l = $("watch-link").textContent; if (l) window.open(l, "_blank", "noopener"); });
+  $("watch-lan-open").addEventListener("click", () => { const l = $("watch-lan-link").textContent; if (l) window.open(l, "_blank", "noopener"); });
   $("watch-lan-copy").addEventListener("click", () => copyText($("watch-lan-link").textContent, $("watch-lan-copy"), "Copy Wi-Fi link"));
   $("watch-sound").addEventListener("click", () => {
     wv.muted = !wv.muted;
@@ -1429,7 +1441,8 @@
   /* ---------- Recent Activity ---------- */
   // What was watched lately (the helper's history.json, newest first), each with where it was
   // left: tap to play it again from there in this page's room, through the same Run as above.
-  let recentItems = [], recentShown = "", recentTimer = null;
+  let recentItems = [], recentShown = "", recentTimer = null, recentAll = false;
+  const RECENT_FIRST = 5;  // shown at first; "Show more" lists everything ever watched
   const minutesLeft = s => s >= 3600 ? `${Math.floor(s / 3600)} hr ${Math.round(s % 3600 / 60)} min left` : `${Math.max(1, Math.round(s / 60))} min left`;
   function ago(at) {
     const s = Date.now() / 1000 - at;
@@ -1455,11 +1468,14 @@
   }
   function renderRecent() {
     $("recent-room").textContent = (currentRoom || $("room").value.trim().toUpperCase() || "1234");
-    const key = JSON.stringify(recentItems) + Math.floor(Date.now() / 60000);  // "x min ago" moves on
+    const key = JSON.stringify(recentItems) + recentAll + Math.floor(Date.now() / 60000);  // "x min ago" moves on
     if (key === recentShown) return;
     recentShown = key;
     $("recent").hidden = !recentItems.length;
-    $("recent-list").innerHTML = recentItems.map(it => {
+    $("recent-more").hidden = recentItems.length <= RECENT_FIRST;
+    $("recent-more").textContent = recentAll ? "Show less" : `Show more (${recentItems.length - RECENT_FIRST} more)`;
+    const shown = recentAll ? recentItems : recentItems.slice(0, RECENT_FIRST);
+    $("recent-list").innerHTML = shown.map(it => {
       const plan = recentPlan(it);
       return `<div class="recent-item" data-id="${escapeHtml(it.id)}">
         <button class="recent-main" data-act="go" aria-label="${escapeHtml(plan.go + ": " + (it.title || ""))}">
@@ -1478,6 +1494,10 @@
           ${(it.live || []).map(room => `<button class="end-stream" data-act="end" data-room="${escapeHtml(room)}">End Stream${it.live.length > 1 ? " (" + escapeHtml(room) + ")" : ""}</button>`).join("")}
           <button class="recent-small" data-act="forget">Remove</button>
         </div>
+        <div class="recent-stars" role="group" aria-label="Your rating">
+          ${[1, 2, 3, 4, 5].map(n => `<button data-act="rate" data-stars="${n}" class="${n <= (it.stars || 0) ? "on" : ""}" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`).join("")}
+          <span class="recent-stars-label">${it.stars ? it.stars + " / 5" : "Rate it"}</span>
+        </div>
       </div>`;
     }).join("");
     $("recent-list").querySelectorAll("img").forEach(img => img.addEventListener("error", () => img.remove()));
@@ -1487,7 +1507,7 @@
     if (location.protocol !== "file:") {
       try {
         const res = await api("/history");
-        if (res.ok && Array.isArray(res.body.items)) recentItems = res.body.items.slice(0, 20);
+        if (res.ok && Array.isArray(res.body.items)) recentItems = res.body.items;
       } catch (e) {}
       renderRecent();
     }
@@ -1513,6 +1533,19 @@
       refreshRecent();
       return;
     }
+    if (btn.dataset.act === "rate") {  // tap the same star again to take the rating off
+      const stars = +btn.dataset.stars === it.stars ? 0 : +btn.dataset.stars;
+      it.stars = stars;
+      renderRecent();  // shows straight away
+      try {
+        const res = await api("/rate", { id: it.id, stars });
+        if (!res.ok) throw new Error(res.body.error || "Couldn't save the rating.");
+      } catch (err) {
+        alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
+        refreshRecent();
+      }
+      return;
+    }
     if (btn.dataset.act === "forget") {
       row.classList.add("busy");
       try { await api("/forget", { id: it.id }); } catch (err) {}
@@ -1529,6 +1562,11 @@
   });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshRecent(); });
   $("room").addEventListener("input", renderRecent);
+  $("recent-more").addEventListener("click", () => {
+    recentAll = !recentAll;
+    renderRecent();
+    if (!recentAll) $("recent").scrollIntoView({ block: "start" });
+  });
 
   /* ---------- Open on my phone ---------- */
   // Only on this Mac (http://localhost:8766): the helper hands out the phone link, which
