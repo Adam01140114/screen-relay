@@ -435,6 +435,8 @@
     <p class="hint" id="recent-hint">Pick up where you left off. It plays in room <span id="recent-room">1234</span>.</p>
     <div class="recent-list" id="recent-list"></div>
     <button id="recent-more" class="wide recent-more" hidden>Show more</button>
+    <button id="recent-export" class="wide">Export Preferences</button>
+    <p class="hint" id="recent-export-hint">Copies your ratings and what you've watched, with instructions, ready to paste into ChatGPT for recommendations.</p>
   </section>
 </main>
 
@@ -1575,6 +1577,39 @@
   });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshRecent(); });
   $("room").addEventListener("input", renderRecent);
+  // Export Preferences: a ready-to-paste message for ChatGPT, setting it up as a recommender
+  // that knows what was rated and watched here.
+  const RECOMMENDER_PROMPT = `You are an expert movie and TV show recommender with deep knowledge of films and series from every era, genre and country, from big hits to hidden gems.
+
+Below is a JSON export of my viewing history:
+- "rated": titles I've rated from 1 to 5 stars (5 = loved it, 4 = really liked it, 3 = it was fine, 2 = didn't like it, 1 = hated it).
+- "watched_not_rated": titles I've watched (or started) but haven't rated yet.
+
+How to help me:
+1. Study my ratings to understand my taste: the genres, tone, pacing, eras, themes, creators and actors I gravitate to, and what I dislike. Weigh the 5-star and 1-2-star titles the most.
+2. Start by summarizing my taste in 3 to 5 short bullet points, then ask what I'm in the mood for.
+3. When you recommend, don't suggest anything that's already in my lists unless I ask. Give a few picks at a time, each with one or two sentences on why it fits me, pointing to specific titles I rated. Mix well-known picks with lesser-known ones, and say whether each is a movie or a TV show and roughly how long it is.
+4. Ask a quick follow-up question when it would sharpen the picks (mood, who I'm watching with, how much time I have, something light vs. something heavy).
+5. If I tell you I've seen something or how I felt about it, remember it for the rest of the conversation.
+
+My viewing history:`;
+  $("recent-export").addEventListener("click", async () => {
+    const btn = $("recent-export");
+    btn.disabled = true;
+    try {
+      const res = await api("/preferences");
+      if (!res.ok) throw new Error(res.body.error || "Couldn't get your ratings.");
+      const data = res.body;
+      if (!data.rated.length && !data.watched_not_rated.length) throw new Error("Nothing rated or watched yet.");
+      const done = `Copied ${data.rated.length} rated + ${data.watched_not_rated.length} watched. Paste into ChatGPT`;
+      await copyText(RECOMMENDER_PROMPT + "\n\n" + JSON.stringify(data, null, 2), btn, done);
+      setTimeout(() => { btn.textContent = "Export Preferences"; }, 6000);
+    } catch (e) {
+      alert(e.message === "Failed to fetch" ? "Can't reach your Mac." : e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
   $("recent-more").addEventListener("click", () => {
     recentAll = !recentAll;
     renderRecent();
