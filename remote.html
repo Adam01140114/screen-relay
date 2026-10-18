@@ -141,6 +141,8 @@
   #np-server-row[hidden], #np-episode-row[hidden] { display: none; }
   .watch-share { display: grid; gap: 8px; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
   .watch-share[hidden] { display: none; }
+  .watch-tv-btn { margin-top: 6px; }
+  .watch-tv-btn[hidden] { display: none; }
   .bad-text { color: var(--bad); }
   .watch-share-label { font-weight: 600; }
   .watch-lan { display: grid; gap: 8px; margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--border); }
@@ -413,6 +415,7 @@
       </div>
       <p class="hint" id="np-status">Change either one to switch to it.</p>
     </div>
+    <button id="watch-tv" class="wide watch-tv-btn">Watch On TV</button>
     <div class="watch-share" id="watch-share" hidden>
       <span class="watch-share-label">Watch together</span>
       <p class="hint">Open this on another phone to watch the same thing, from anywhere.</p>
@@ -1030,12 +1033,14 @@
   }
 
   // The link for another phone: Screen Relay on Render, so it works on any network.
+  let tvLinksOpen = false;  // the TV links stay tucked away until "Watch On TV"
   function showWatchLink(room, publicRelay, lanRelay) {
     const lan = lanRelay ? lanRelay + "#tv=" + encodeURIComponent(room) : null;
     $("watch-lan").hidden = !lan;
     $("watch-lan-link").textContent = lan || "";
     const link = publicRelay ? publicRelay + "#tv=" + encodeURIComponent(room) : null;
-    $("watch-share").hidden = !link;
+    $("watch-tv").hidden = !link;
+    $("watch-share").hidden = !link || !tvLinksOpen;  // shown only after "Watch On TV"
     if (!link || $("watch-link").textContent === link) return;
     $("watch-link").textContent = link;
     $("watch-qr").textContent = "";
@@ -1356,6 +1361,12 @@
     }
   });
   $("watch-copy").addEventListener("click", () => copyText($("watch-link").textContent, $("watch-copy"), "Copy link"));
+  $("watch-tv").addEventListener("click", () => {
+    tvLinksOpen = !tvLinksOpen;
+    $("watch-share").hidden = !tvLinksOpen || !$("watch-link").textContent;
+    $("watch-tv").textContent = tvLinksOpen ? "Hide TV links" : "Watch On TV";
+    if (tvLinksOpen) $("watch-share").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
   $("watch-open").addEventListener("click", () => { const l = $("watch-link").textContent; if (l) window.open(l, "_blank", "noopener"); });
   $("watch-lan-open").addEventListener("click", () => { const l = $("watch-lan-link").textContent; if (l) window.open(l, "_blank", "noopener"); });
   $("watch-lan-copy").addEventListener("click", () => copyText($("watch-lan-link").textContent, $("watch-lan-copy"), "Copy Wi-Fi link"));
@@ -1505,6 +1516,21 @@
                           at: `${clock(it.time)} of ${clock(it.duration)}` };
     return { sub: where || (tv ? "TV show" : "Movie"), go: tv && !it.season ? "Open" : "Play", startOver: false, pct: 0 };
   }
+  // A poster: the copy kept on the Mac when there is one (over the remote link it comes through
+  // the connection once, then from memory), otherwise the site's own picture.
+  const remotePosters = new Map();  // history id -> data: address
+  function posterHtml(it) {
+    let src = it.poster || "";
+    if (it.saved_poster && !REMOTE) src = it.saved_poster;
+    else if (it.saved_poster && remotePosters.get(it.id)) src = remotePosters.get(it.id);
+    else if (it.saved_poster && !remotePosters.has(it.id)) {
+      remotePosters.set(it.id, "");  // asked once
+      api("/poster-data/" + it.id).then(res => {
+        if (res.ok && res.body.data) { remotePosters.set(it.id, res.body.data); recentShown = ""; renderRecent(); }
+      }).catch(() => {});
+    }
+    return src ? `<img src="${escapeHtml(src)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : "";
+  }
   function renderRecent() {
     $("recent-room").textContent = (currentRoom || $("room").value.trim().toUpperCase() || "1234");
     const key = JSON.stringify(recentItems) + recentAll + Math.floor(Date.now() / 60000);  // "x min ago" moves on
@@ -1518,7 +1544,7 @@
       const plan = recentPlan(it);
       return `<div class="recent-item" data-id="${escapeHtml(it.id)}">
         <button class="recent-main" data-act="go" aria-label="${escapeHtml(plan.go + ": " + (it.title || ""))}">
-          <span class="recent-thumb">${it.poster ? `<img src="${escapeHtml(it.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</span>
+          <span class="recent-thumb">${posterHtml(it)}</span>
           <span class="recent-text">
             <span class="recent-title">${escapeHtml(it.title || "Untitled")}</span>
             <span class="recent-sub">${escapeHtml(plan.sub)}${plan.at ? ` (${plan.at})` : ""}</span>
