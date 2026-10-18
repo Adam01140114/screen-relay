@@ -897,7 +897,26 @@
   const RELAY_PREFIX = "screenrelay-tv-", RELAY_SLOTS = 4;
   const relaySlot = (room, i) => RELAY_PREFIX + room + (i ? "-" + i : "");
   // Same as Screen Relay's: stereo, high-bitrate sound instead of WebRTC's mono voice-call default.
+  // Hardware video: H.264 first in the list of codecs (the Mac's video chip encodes it, TVs and
+  // phones have chips to decode it), so frames come out on time instead of waiting on software
+  // VP8. A screen that can't do H.264 falls back to the next codec in the list.
+  function preferH264(sdp) {
+    const lines = sdp.split("\r\n");
+    const mi = lines.findIndex((l) => l.startsWith("m=video "));
+    if (mi < 0) return sdp;
+    let end = lines.findIndex((l, i) => i > mi && l.startsWith("m="));
+    if (end < 0) end = lines.length;
+    const section = lines.slice(mi, end);
+    const h264 = section.map((l) => l.match(/^a=rtpmap:(\d+) H264\/90000/i)).filter(Boolean).map((m) => m[1]);
+    if (!h264.length) return sdp;
+    const rtx = section.map((l) => l.match(/^a=fmtp:(\d+) apt=(\d+)/)).filter((m) => m && h264.includes(m[2])).map((m) => m[1]);
+    const first = [...h264, ...rtx];
+    const parts = lines[mi].split(" ");
+    lines[mi] = parts.slice(0, 3).concat(first.filter((p) => parts.includes(p)), parts.slice(3).filter((p) => !first.includes(p))).join(" ");
+    return lines.join("\r\n");
+  }
   function hiFiAudio(sdp) {
+    sdp = preferH264(sdp);
     const m = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
     if (!m) return sdp;
     return sdp.replace(new RegExp("a=fmtp:" + m[1] + " ([^\\r\\n]*)"), (line, params) => "a=fmtp:" + m[1] + " "
@@ -945,15 +964,20 @@
       const privateAddr = (a) => !a || /\.local$/i.test(a) || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|fe80:|fd|fc)/i.test(a);
       if (local.candidateType === "host" && remote.candidateType === "host"
           && privateAddr(local.address || local.ip) && privateAddr(remote.address || remote.ip)) return "lan";
-      return "internet";
+      // Home networks often connect over IPv6 addresses that look public: a round trip of a few
+      // milliseconds is the same network either way.
+      const rtt = pair.currentRoundTripTime;
+      if (rtt == null) return null;  // not measured yet: asked again shortly
+      return rtt < 0.012 ? "lan" : "internet";
     } catch { return null; }
   }
   // Watching over the internet: hold about half a second of video and sound before playing,
   // so the network's hiccups are smoothed out instead of showing as stutters. On the same
   // Wi-Fi it plays straight away.
-  async function smoothPlayback(pc) {
+  async function smoothPlayback(pc, tries = 8) {
     const path = await connectionPath(pc);
-    const ms = path === "lan" ? 0 : path ? 500 : null;
+    if (!path && tries > 0) { setTimeout(() => smoothPlayback(pc, tries - 1), 1500); return; }  // not connected yet
+    const ms = path === "lan" ? 150 : path ? 500 : null;  // Wi-Fi: a sliver, so frames come out evenly
     if (ms === null) return;
     for (const r of pc.getReceivers()) {
       try { r.jitterBufferTarget = ms; } catch {}
