@@ -347,6 +347,11 @@ async function startShare(code) {
     viewers.delete(target);
     clearTimeout(v.timer);
     try { v.call.close(); } catch {}
+    // The data link too: left open, each try at an empty slot kept a connection, and after a
+    // few hours Chrome refused to make any more (no screen could join, even after a restart).
+    try { v.conn.close(); } catch {}
+    try { v.call.peerConnection && v.call.peerConnection.close(); } catch {}
+    try { v.conn.peerConnection && v.conn.peerConnection.close(); } catch {}
     refreshState();
   }
   function callSlot(target) {
@@ -354,6 +359,7 @@ async function startShare(code) {
     viewers.set(target, v);
     v.conn = sendPeer.connect(target, { reliable: true });
     v.call = sendPeer.call(target, stream, { sdpTransform: hiFiAudio });
+    if (!v.call) throw new Error("not connected to the server");  // PeerJS gives nothing then
     v.timer = setTimeout(() => { if (!v.live) drop(target, v); }, 15000);  // nobody answered
     v.call.on("close", () => drop(target, v));
     const pc = v.call.peerConnection;
@@ -369,9 +375,12 @@ async function startShare(code) {
     clearTimeout(retryTimer);
     retryTimer = null;
     if (!stream || !sendPeer || sendPeer.destroyed) return;
+    retryTimer = setTimeout(callAll, 4000);  // first, so one failed call can't stop the loop
     if (!sendPeer.disconnected)  // while reconnecting to the server, new calls can't be placed
-      for (let i = 0; i < SLOTS; i++) if (!viewers.has(slotId(code, i))) callSlot(slotId(code, i));
-    retryTimer = setTimeout(callAll, 4000);
+      for (let i = 0; i < SLOTS; i++) if (!viewers.has(slotId(code, i))) {
+        try { callSlot(slotId(code, i)); }
+        catch (e) { const v = viewers.get(slotId(code, i)); if (v) drop(slotId(code, i), v); }
+      }
   }
 
   // The server only introduces screens to each other; once connected, the video flows
