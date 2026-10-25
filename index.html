@@ -74,6 +74,15 @@
   #tv .howto strong { color: var(--tv-fg); font-weight: 500; }
   #tv .qr { background: #fff; padding: 16px; border-radius: 14px; line-height: 0; }
   #tv .qr img, #tv .qr canvas { width: clamp(150px, 22vw, 280px) !important; height: auto !important; }
+  #tv .room-switch { margin: 22px 0 0; display: grid; gap: 8px; }
+  #tv .room-switch label { font: 500 clamp(0.8rem, 1.3vw, 1.05rem) var(--mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--tv-muted); }
+  #tv .room-switch div { display: flex; gap: 10px; }
+  #tv .room-switch input { width: 7.5em; font: 600 clamp(1.1rem, 2vw, 1.6rem) var(--mono); letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 10px 14px; border-radius: 10px; border: 2px solid var(--tv-muted); background: transparent; color: var(--tv-fg); }
+  #tv .room-switch input:focus, #tv .room-switch button:focus { outline: 3px solid #ffd166; outline-offset: 2px; }
+  #tv .room-switch button { font: 600 clamp(1rem, 1.8vw, 1.4rem) inherit; font-family: inherit; padding: 10px 18px; border-radius: 10px; border: 0; background: var(--tv-fg); color: var(--tv-bg); cursor: pointer; }
+  #tv .room-switch-error { min-height: 1.2em; color: #ff8a8a; font-size: clamp(0.9rem, 1.5vw, 1.2rem); }
+  @media (max-aspect-ratio: 1/1) { #tv .room-switch div { justify-content: center; } }
   #tv .sound-prompt { margin: 22px 0 0; font-size: clamp(1rem, 1.9vw, 1.6rem); color: #ffd166; max-width: 30ch; }
   #tv .sound-prompt.on { color: #6ee7a8; }
   #tv .sound-overlay {
@@ -142,6 +151,14 @@
       <div class="eyebrow">Room code</div>
       <div class="big-code" id="tvCode">·····</div>
       <p class="howto">On your computer, go to <strong id="tvUrl"></strong> and enter this code.</p>
+      <form class="room-switch" id="roomSwitch" autocomplete="off">
+        <label for="roomSwitchInput">Watch another room</label>
+        <div>
+          <input id="roomSwitchInput" inputmode="text" maxlength="6" placeholder="Code" spellcheck="false" autocapitalize="characters">
+          <button type="submit">Show room</button>
+        </div>
+        <span class="room-switch-error" id="roomSwitchError"></span>
+      </form>
       <p class="sound-prompt" id="soundPrompt">Press <strong>OK</strong> on your remote once so everything plays with sound.</p>
     </div>
     <div class="qr" id="qr" aria-label="QR code for the share page"></div>
@@ -489,7 +506,8 @@ function openTvPeer() {
     if (d === "bye") endTvStream();
     else if (d && d.type === "volume") setTvVolume(d.value);  // from the phone's volume slider
   }));
-  tvPeer.on("disconnected", () => { if (!tvPeer.destroyed) tvPeer.reconnect(); });
+  const peer = tvPeer;
+  tvPeer.on("disconnected", () => { if (peer === tvPeer && !peer.destroyed) peer.reconnect(); });
   tvPeer.on("error", (err) => {
     if (err.type === "unavailable-id") {
       tvPeer.destroy();
@@ -617,6 +635,28 @@ $("soundBtn").onclick = () => {
   $("soundBtn").hidden = true;
   $("soundOverlay").hidden = true;
 };
+// Waiting screen: type another room's code to show that room here instead (the page stays
+// open, so sound stays on).
+function switchTvRoom(code) {
+  if (tvCall) { tvCall.close(); tvCall = null; }
+  if (tvPeer) tvPeer.destroy();
+  tvFixed = true;
+  tvSlot = 0;
+  tvRetries = 0;
+  tvCode = code;
+  history.replaceState(null, "", "#tv=" + code);
+  openTvPeer();
+}
+$("roomSwitch").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const code = $("roomSwitchInput").value.trim().toUpperCase();
+  if (!/^[A-Z0-9]{4,6}$/.test(code)) { $("roomSwitchError").textContent = "Room codes are 4 to 6 letters or numbers."; return; }
+  $("roomSwitchError").textContent = "";
+  $("roomSwitchInput").value = "";
+  $("roomSwitchInput").blur();
+  if (code !== tvCode) switchTvRoom(code);
+});
+
 // Hide the cursor and buttons on the TV after a few seconds without movement.
 let idleTimer;
 $("tv").addEventListener("pointermove", () => {
