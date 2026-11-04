@@ -207,6 +207,15 @@ function preferH264(sdp) {
   lines[mi] = parts.slice(0, 3).concat(first.filter((p) => parts.includes(p)), parts.slice(3).filter((p) => !first.includes(p))).join(" ");
   return lines.join("\r\n");
 }
+// Some TVs only take "constrained baseline" H.264, which Chrome on a Mac makes in software
+// (slow, unevenly timed frames: choppy on the TV while a phone looks fine). The Mac's video
+// hardware makes the plain baseline kind, which those TVs play just the same, so when a
+// screen's answer has only the constrained kind, this end reads it as the plain one: the
+// hardware does the work and the screen still gets its own payload numbers.
+function hardwareH264(answer) {
+  if (/profile-level-id=(4200|4d|64)/i.test(answer)) return answer;  // already gets the hardware kind
+  return answer.replace(/^(a=fmtp:\d+ .*profile-level-id=)42e0/gim, "$14200");
+}
 function hiFiAudio(sdp) {
   sdp = preferH264(sdp);
   const m = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
@@ -363,6 +372,15 @@ async function startShare(code) {
     v.timer = setTimeout(() => { if (!v.live) drop(target, v); }, 15000);  // nobody answered
     v.call.on("close", () => drop(target, v));
     const pc = v.call.peerConnection;
+    if (pc) {
+      const setRemote = pc.setRemoteDescription.bind(pc);
+      pc.setRemoteDescription = (d) => {
+        if (d && d.type === "answer") {
+          try { d = { type: "answer", sdp: hardwareH264(d.sdp) }; } catch {}
+        }
+        return setRemote(d);
+      };
+    }
     if (pc) pc.addEventListener("connectionstatechange", () => {
       if (pc.connectionState === "connected") {
         v.live = true; refreshState(); boostSender(pc);
