@@ -101,7 +101,45 @@
   #tv.idle-cursor .tv-controls.autohide { opacity: 0; }
   #tv .tv-controls button { background: rgba(0,0,0,0.6); color: #fff; border-color: rgba(255,255,255,0.25); font-size: 0.9rem; padding: 9px 14px; }
   #tv .tv-controls button.sound { background: #fff; color: #0b0e13; border-color: #fff; font-weight: 600; }
-  @media (prefers-reduced-motion: reduce) { .pill .dot { animation: none !important; } }
+  /* TV player: the show fills the screen; a press anywhere plays or pauses it, and a bar along
+     the bottom (Netflix-style) seeks, mutes and changes episode. It fades away while playing. */
+  #tv .player { position: absolute; inset: 0; z-index: 4; cursor: pointer; }
+  #tv .player .chrome { transition: opacity 0.25s; }
+  #tv .player.idle { cursor: none; }
+  #tv .player.idle .chrome { opacity: 0; pointer-events: none; }
+  #tv .player-top { position: absolute; left: 0; right: 0; top: 0; padding: clamp(18px, 3vw, 40px) clamp(20px, 3.5vw, 56px) 80px;
+    background: linear-gradient(rgba(0,0,0,0.75), transparent); pointer-events: none; }
+  #tv .pl-title { font: 700 clamp(1.3rem, 2.6vw, 2.4rem)/1.1 var(--display); color: #fff; }
+  #tv .pl-sub { margin-top: 6px; font: 500 clamp(0.95rem, 1.6vw, 1.4rem) var(--body); color: rgba(255,255,255,0.75); }
+  #tv .player-bar { position: absolute; left: 0; right: 0; bottom: 0; cursor: default;
+    padding: 90px clamp(20px, 3.5vw, 56px) clamp(14px, 2.4vw, 34px); background: linear-gradient(transparent, rgba(0,0,0,0.88)); }
+  #tv .pl-progress { position: relative; height: 30px; display: flex; align-items: center; cursor: pointer; outline: none; }
+  #tv .pl-track { position: relative; flex: 1; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.3); transition: height 0.15s; }
+  #tv .pl-progress:hover .pl-track, #tv .pl-progress:focus-visible .pl-track, #tv .pl-progress.drag .pl-track { height: 9px; }
+  #tv .pl-fill { position: absolute; inset: 0; border-radius: 3px; background: #e50914; transform-origin: left center; transform: scaleX(0); }
+  #tv .pl-thumb { position: absolute; top: 50%; left: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: #e50914;
+    transform: scale(0); transition: transform 0.15s; }
+  #tv .pl-progress:hover .pl-thumb, #tv .pl-progress:focus-visible .pl-thumb, #tv .pl-progress.drag .pl-thumb { transform: scale(1); }
+  #tv .pl-progress:focus-visible .pl-thumb { box-shadow: 0 0 0 4px #fff; }
+  #tv .pl-tip { position: absolute; bottom: 34px; transform: translateX(-50%); padding: 4px 9px; border-radius: 6px; background: rgba(20,20,20,0.92);
+    color: #fff; font: 600 clamp(0.9rem, 1.4vw, 1.2rem) var(--mono); white-space: nowrap; pointer-events: none; }
+  #tv .pl-row { display: flex; align-items: center; gap: clamp(6px, 1.3vw, 22px); margin-top: 6px; }
+  #tv .pl-btn { flex: none; width: clamp(42px, 3.8vw, 64px); height: clamp(42px, 3.8vw, 64px); padding: 7px; border: 0; border-radius: 50%;
+    background: none; color: #fff; cursor: pointer; transition: transform 0.12s; }
+  #tv .pl-btn svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+  #tv .pl-btn:hover:not(:disabled) { transform: scale(1.18); }
+  #tv .pl-btn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  #tv .pl-btn:disabled { opacity: 0.3; cursor: default; }
+  #tv .pl-time { font: 500 clamp(0.95rem, 1.5vw, 1.35rem) var(--mono); color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; margin-left: 6px; }
+  #tv .pl-spacer { flex: 1; }
+  #tv .player:not(.paused) .ic-play, #tv .player.paused .ic-pause, #tv .player:not(.muted) .ic-muted, #tv .player.muted .ic-sound { display: none; }
+  #tv .player.no-state .needs-state { display: none; }
+  #tv .pl-flash { position: absolute; left: 50%; top: 50%; width: clamp(80px, 9vw, 130px); height: clamp(80px, 9vw, 130px); padding: clamp(18px, 2vw, 30px);
+    border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; transform: translate(-50%, -50%); opacity: 0; pointer-events: none; }
+  #tv .pl-flash svg { width: 100%; height: 100%; fill: currentColor; display: block; }
+  #tv .pl-flash.show { animation: pl-flash 0.7s ease-out; }
+  @keyframes pl-flash { from { opacity: 1; transform: translate(-50%, -50%) scale(0.8); } to { opacity: 0; transform: translate(-50%, -50%) scale(1.35); } }
+  @media (prefers-reduced-motion: reduce) { .pill .dot, #tv .pl-flash.show { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -164,12 +202,32 @@
     <div class="qr" id="qr" aria-label="QR code for the share page"></div>
   </div>
   <video id="tvVideo" autoplay playsinline hidden></video>
+  <div class="player no-state paused" id="player" hidden>
+    <div class="player-top chrome"><div class="pl-title" id="plTitle"></div><div class="pl-sub" id="plSub"></div></div>
+    <div class="pl-flash" id="plFlash"></div>
+    <div class="player-bar chrome" id="plBar">
+      <div class="pl-progress needs-state" id="plProgress" tabindex="0" role="slider" aria-label="Position in the show" aria-valuemin="0">
+        <div class="pl-track"><div class="pl-fill" id="plFill"></div><div class="pl-thumb" id="plThumb"></div></div>
+        <div class="pl-tip" id="plTip" hidden></div>
+      </div>
+      <div class="pl-row">
+        <button class="pl-btn needs-state" id="plPlay" aria-label="Play or pause"><svg viewBox="0 0 24 24" class="ic-play" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><svg viewBox="0 0 24 24" class="ic-pause" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button>
+        <button class="pl-btn needs-state" id="plBack" aria-label="Back 10 seconds"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/><text x="12" y="16.4" font-size="6.6" font-weight="700" text-anchor="middle" font-family="sans-serif">10</text></svg></button>
+        <button class="pl-btn needs-state" id="plFwd" aria-label="Forward 10 seconds"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/><text x="12" y="16.4" font-size="6.6" font-weight="700" text-anchor="middle" font-family="sans-serif">10</text></svg></button>
+        <button class="pl-btn" id="plMute" aria-label="Mute or unmute"><svg viewBox="0 0 24 24" class="ic-sound" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg><svg viewBox="0 0 24 24" class="ic-muted" aria-hidden="true"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg></button>
+        <span class="pl-time needs-state" id="plTime"></span>
+        <span class="pl-spacer"></span>
+        <button class="pl-btn needs-state" id="plPrev" aria-label="Previous episode" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
+        <button class="pl-btn needs-state" id="plNext" aria-label="Next episode" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+        <button class="pl-btn" id="plFs" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></button>
+      </div>
+    </div>
+  </div>
   <div class="sound-overlay" id="soundOverlay" hidden>Press <strong>OK</strong> for sound</div>
   <div class="volume-overlay" id="volumeOverlay" hidden></div>
   <div class="tv-status" id="tvStatus">Getting a code…</div>
   <div class="tv-controls" id="tvControls">
     <button id="soundBtn" class="sound" hidden>Turn on sound</button>
-    <button id="ppBtn" hidden>Play / Pause</button>
     <button id="fsBtn">Full screen</button>
   </div>
 </div>
@@ -216,6 +274,17 @@ function preferH264(sdp) {
 function hardwareH264(answer) {
   if (/profile-level-id=(4200|4d|64)/i.test(answer)) return answer;  // already gets the hardware kind
   return answer.replace(/^(a=fmtp:\d+ .*profile-level-id=)42e0/gim, "$14200");
+}
+// A screen that opened this page from the Mac's own address is on the home Wi-Fi: it asks the
+// computer never to send it less than HOME_MIN_KBPS. Some TVs' Wi-Fi naps during a long pause,
+// and the first moments after Play then looked like a bad network to the computer, which cut
+// the picture to a frame a second and took minutes to come back.
+const HOME_MIN_KBPS = 2500, HOME_START_KBPS = 4000;
+const onHomeNetwork = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
+function homeBitrateFloor(sdp) {
+  if (!onHomeNetwork) return sdp;
+  return sdp.replace(/^(a=fmtp:\d+ [^\r\n]*profile-level-id=[^\r\n]*)$/gm,
+    "$1;x-google-min-bitrate=" + HOME_MIN_KBPS + ";x-google-start-bitrate=" + HOME_START_KBPS);
 }
 function hiFiAudio(sdp) {
   sdp = preferH264(sdp);
@@ -301,7 +370,10 @@ function store(key, val) { try { val == null ? localStorage.removeItem(key) : lo
 function load(key) { try { return localStorage.getItem(key); } catch { return null; } }
 
 /* =============== Computer: share to a TV =============== */
-let stream = null, sendPeer = null, retryTimer = null;
+let stream = null, sendPeer = null, retryTimer = null, stateTimer = null;
+// Sharing from the Mac's own Screen Relay (the search script's): its helper is next door on
+// this Mac, so the TVs can see where the show is and control it.
+const besideHelper = ["localhost", "127.0.0.1"].includes(location.hostname);
 const viewers = new Map();  // slot peer id -> { call, conn, live, timer }
 const canShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
 
@@ -371,9 +443,12 @@ async function startShare(code) {
     // Play/Pause pressed on that screen: handed to the helper on this Mac, which tells the
     // show's run (the same way the phone's Pause/Play does).
     v.conn.on("data", (d) => {
-      if (!d || d.type !== "control" || !["toggle", "play", "pause"].includes(d.action)) return;
+      if (!besideHelper || !d || d.type !== "control"
+          || !["toggle", "play", "pause", "seek", "next", "prev"].includes(d.action)) return;
+      const body = { room: code, action: d.action };
+      if (d.action === "seek") { body.time = +d.time; if (!Number.isFinite(body.time)) return; }
       fetch("http://localhost:8766/tv-control", { method: "POST", mode: "no-cors",
-        headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ room: code, action: d.action }) }).catch(() => {});
+        headers: { "Content-Type": "text/plain" }, body: JSON.stringify(body) }).catch(() => {});
     });
     v.call = sendPeer.call(target, stream, { sdpTransform: hiFiAudio });
     if (!v.call) throw new Error("not connected to the server");  // PeerJS gives nothing then
@@ -445,10 +520,23 @@ async function startShare(code) {
     else console.error(err);
   }
 
+  // Where the show is and what's on, for the TVs' play bar: asked of the helper once a second
+  // while a screen is watching, and passed to each one.
+  clearInterval(stateTimer);
+  if (besideHelper) stateTimer = setInterval(async () => {
+    const live = [...viewers.values()].filter((v) => v.live && v.conn && v.conn.open);
+    if (!live.length) return;
+    let state;
+    try { state = await (await fetch("http://localhost:8766/tv-state?room=" + encodeURIComponent(code), { cache: "no-store" })).json(); }
+    catch { return; }
+    for (const v of live) try { v.conn.send({ type: "state", ...state }); } catch {}
+  }, 1000);
+
   startPeer();
 }
 
 function stopShare(errorText) {
+  clearInterval(stateTimer);
   clearTimeout(retryTimer);
   retryTimer = null;
   for (const v of viewers.values()) {
@@ -502,28 +590,234 @@ function setTvVolume(value, quiet) {
 }
 if (load("screenrelay-volume") !== null) setTvVolume(load("screenrelay-volume"), true);
 
-// Play/Pause from the TV: sent back to the computer that's sharing, which pauses or plays the
-// show itself (so the phone and every other screen see it too).
+/* ---------- TV: the play bar (Netflix-style) ---------- */
+// The show plays on the computer, so every press here is a request sent back to it (it pauses,
+// jumps or changes episode for every screen at once). The computer says where the show is
+// once a second ({type: "state"}); the bar follows that and moves on by itself in between.
 const tvConns = new Set();
-function tvPlayPause(action = "toggle") {
-  let sent = false;
-  for (const c of tvConns) if (c.open) try { c.send({ type: "control", action }); sent = true; } catch {}
-  $("volumeOverlay").textContent = sent ? (action === "pause" ? "Pausing…" : action === "play" ? "Playing…" : "Play / Pause…")
-    : "Can't reach the computer right now";
+const SEEK_STEP = 10;  // seconds, for the ⟲10 / 10⟳ buttons and the remote's left and right
+const pl = { state: null, at: 0, paused: true, pendingUntil: 0, seekTo: null, seekTimer: null, idleTimer: null, dragging: false };
+let userMuted = false, soundPressAt = 0;
+
+function toast(text) {
+  $("volumeOverlay").textContent = text;
   $("volumeOverlay").hidden = false;
   clearTimeout(volumeTimer);
-  volumeTimer = setTimeout(() => { $("volumeOverlay").hidden = true; }, 1500);
+  volumeTimer = setTimeout(() => { $("volumeOverlay").hidden = true; }, 1600);
 }
-// Remote buttons: the play/pause keys always; OK (Enter) or the space bar too while a show is
-// on screen, unless that press is the one turning the sound on, or it's for a button or box.
+function tvControl(action, time) {
+  let sent = false;
+  for (const c of tvConns) if (c.open) try { c.send({ type: "control", action, time }); sent = true; } catch {}
+  if (!sent) toast("Can't reach the computer right now");
+  return sent;
+}
+const clock = (s) => {
+  s = Math.max(0, Math.floor(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = String(s % 60).padStart(2, "0");
+  return h ? h + ":" + String(m).padStart(2, "0") + ":" + x : m + ":" + x;
+};
+const plPlayback = () => pl.state && pl.state.playback;
+function plNow() {
+  const p = plPlayback();
+  if (!p) return 0;
+  const t = p.time + (pl.paused ? 0 : (Date.now() - pl.at) / 1000);
+  return p.duration ? Math.min(t, p.duration) : t;
+}
+// Pins the bar to what was just asked for, so the computer's next report (sent before it
+// acted) doesn't make it jump back for a moment.
+function plAssume(changes) {
+  const p = plPlayback();
+  if (p) { p.time = plNow(); pl.at = Date.now(); Object.assign(p, changes.playback || {}); }
+  if ("paused" in changes) pl.paused = changes.paused;
+  pl.pendingUntil = Date.now() + 2500;
+  plRender();
+}
+function plUpdate(d) {
+  const keep = Date.now() < pl.pendingUntil && plPlayback();
+  if (keep) d.playback = plPlayback();
+  pl.state = d;
+  if (!keep) { pl.at = Date.now(); pl.paused = !d.playback || !!d.playback.paused; }
+  const episode = d.season ? "Season " + d.season + (d.episode ? " · Episode " + d.episode : "") : "";
+  $("plTitle").textContent = d.title || "";
+  $("plSub").textContent = [episode, d.episodeName].filter(Boolean).join(" · ");
+  $("plPrev").hidden = $("plNext").hidden = !d.season;  // TV shows only
+  $("plPrev").disabled = !d.hasPrev;
+  $("plNext").disabled = !d.hasNext;
+  plRender();
+}
+function plRender() {
+  const p = plPlayback(), dur = (p && p.duration) || 0;
+  const t = pl.seekTo != null ? pl.seekTo : plNow();
+  const f = dur ? Math.max(0, Math.min(1, t / dur)) : 0;
+  $("plFill").style.transform = "scaleX(" + f + ")";
+  $("plThumb").style.left = f * 100 + "%";
+  $("plTime").textContent = dur ? clock(t) + " / " + clock(dur) : "";
+  $("plProgress").setAttribute("aria-valuemax", String(Math.round(dur)));
+  $("plProgress").setAttribute("aria-valuenow", String(Math.round(t)));
+  $("plProgress").setAttribute("aria-valuetext", clock(t));
+  const player = $("player");
+  player.classList.toggle("no-state", !p);
+  player.classList.toggle("paused", pl.paused);
+  player.classList.toggle("muted", tvVideo.muted);
+  if (pl.paused) player.classList.remove("idle");
+}
+setInterval(() => { if (!$("player").hidden && !pl.paused && !pl.dragging) plRender(); }, 250);
+
+// The bar shows on any movement or press, and fades after a few quiet seconds while playing.
+function plWake() {
+  const player = $("player");
+  player.classList.remove("idle");
+  clearTimeout(pl.idleTimer);
+  pl.idleTimer = setTimeout(() => {
+    if (!pl.paused && !pl.dragging && !player.contains(document.activeElement)) player.classList.add("idle");
+    else plWake();
+  }, 3500);
+}
+function plFlash(icon) {
+  const el = $("plFlash");
+  const svg = $("plPlay").querySelector(icon === "play" ? ".ic-play" : ".ic-pause").cloneNode(true);
+  svg.removeAttribute("class");  // (the class would hide it, like the button's)
+  el.replaceChildren(svg);
+  el.classList.remove("show");
+  void el.offsetWidth;  // restart the animation
+  el.classList.add("show");
+}
+function plToggle() {
+  if (!plPlayback() || Date.now() - soundPressAt < 800) return;  // that press was for the sound
+  if (!tvControl("toggle")) return;
+  plAssume({ paused: !pl.paused });
+  plFlash(pl.paused ? "pause" : "play");
+  plWake();
+}
+function plSeek(to) {
+  const p = plPlayback();
+  if (!p) return;
+  const end = p.duration ? p.duration - 1 : Infinity;
+  pl.seekTo = Math.max(0, Math.min(end, to));
+  plRender();
+  // Presses in a row add up (three presses: 30 seconds) and go as one jump.
+  clearTimeout(pl.seekTimer);
+  pl.seekTimer = setTimeout(() => {
+    const at = pl.seekTo;
+    pl.seekTo = null;
+    if (tvControl("seek", at)) plAssume({ playback: { time: at } });
+    else plRender();
+  }, 450);
+}
+const plSeekBy = (delta) => plSeek((pl.seekTo != null ? pl.seekTo : plNow()) + delta);
+function plEpisode(step) {
+  const button = $(step > 0 ? "plNext" : "plPrev");
+  if (button.hidden || button.disabled) return;
+  if (tvControl(step > 0 ? "next" : "prev")) toast(step > 0 ? "Loading the next episode…" : "Loading the previous episode…");
+}
+function plMute() {
+  tvVideo.muted = !tvVideo.muted;
+  userMuted = tvVideo.muted;
+  if (!tvVideo.muted) {
+    tvVideo.play().catch(() => {});
+    $("soundOverlay").hidden = true;
+  }
+  plRender();
+}
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.().catch(() => {});
+}
+
+// A press anywhere on the picture plays or pauses; the bar's own buttons do their own thing.
+// While the bar is hidden, a press where it would be only brings it back (it was likely aimed at a
+// button that wasn't showing yet).
+let plIdleAtPress = false;
+$("player").addEventListener("pointerdown", (e) => {
+  plIdleAtPress = $("player").classList.contains("idle");
+}, { capture: true });
+$("player").addEventListener("click", (e) => {
+  if (e.target.closest(".pl-btn, .pl-progress")) return;
+  const r = $("plBar").getBoundingClientRect();
+  if (plIdleAtPress && e.clientY >= r.top) { plWake(); return; }
+  plToggle();
+});
+$("player").addEventListener("pointermove", plWake);
+$("plPlay").onclick = plToggle;
+$("plBack").onclick = () => { plSeekBy(-SEEK_STEP); plWake(); };
+$("plFwd").onclick = () => { plSeekBy(SEEK_STEP); plWake(); };
+$("plMute").onclick = () => { plMute(); plWake(); };
+$("plPrev").onclick = () => plEpisode(-1);
+$("plNext").onclick = () => plEpisode(1);
+$("plFs").onclick = toggleFullscreen;
+
+// The progress bar: press or drag to pick a spot (the time shows above it), let go to jump there.
+(() => {
+  const bar = $("plProgress"), tip = $("plTip");
+  const at = (e) => {
+    const r = bar.querySelector(".pl-track").getBoundingClientRect(), p = plPlayback();
+    const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    return { f, t: f * ((p && p.duration) || 0) };
+  };
+  const showTip = (e) => {
+    const { f, t } = at(e);
+    if (!plPlayback() || !plPlayback().duration) return;
+    tip.textContent = clock(t);
+    tip.style.left = f * 100 + "%";
+    tip.hidden = false;
+  };
+  bar.addEventListener("pointermove", (e) => { showTip(e); if (pl.dragging) { pl.seekTo = at(e).t; plRender(); } });
+  bar.addEventListener("pointerleave", () => { if (!pl.dragging) tip.hidden = true; });
+  bar.addEventListener("pointerdown", (e) => {
+    if (!plPlayback() || !plPlayback().duration) return;
+    pl.dragging = true;
+    bar.classList.add("drag");
+    bar.setPointerCapture(e.pointerId);
+    clearTimeout(pl.seekTimer);
+    pl.seekTo = at(e).t;
+    showTip(e);
+    plRender();
+  });
+  const finish = (e) => {
+    if (!pl.dragging) return;
+    pl.dragging = false;
+    bar.classList.remove("drag");
+    tip.hidden = true;
+    plSeek(at(e).t);
+    plWake();
+  };
+  bar.addEventListener("pointerup", finish);
+  bar.addEventListener("pointercancel", finish);
+})();
+
+// The remote. Play/pause, rewind/fast-forward and next/previous track keys always work. OK plays
+// or pauses (unless it's on a button, or it's the press that turns the sound on); left and right
+// jump 10 seconds, or move between the bar's buttons once one has focus; up and down move
+// between the progress bar and the buttons. Any press brings the bar back.
 window.addEventListener("keydown", (e) => {
-  if (!tvCall || tvVideo.hidden) return;
-  const action = { MediaPlayPause: "toggle", MediaPlay: "play", MediaPause: "pause" }[e.key];
-  const onControl = e.target && e.target.closest && e.target.closest("button, input, a");
-  const ok = (e.key === "Enter" || e.key === " ") && !onControl && soundUnlocked && !tvVideo.muted;
-  if (!action && !ok) return;
-  e.preventDefault();
-  if (!e.repeat) tvPlayPause(action || "toggle");
+  if (!tvCall || tvVideo.hidden || $("player").hidden) return;
+  const wasIdle = $("player").classList.contains("idle");
+  plWake();
+  const media = { MediaPlayPause: "toggle", MediaPlay: "play", MediaPause: "pause" }[e.key];
+  const focus = document.activeElement, onButton = focus && focus.classList && focus.classList.contains("pl-btn");
+  const buttons = [...$("player").querySelectorAll(".pl-btn")].filter((b) => b.offsetParent && !b.disabled);
+  let handled = true;
+  if (media) {
+    if (!e.repeat && (media === "toggle" || (media === "pause") !== pl.paused)) plToggle();
+  } else if (e.key === "MediaFastForward") plSeekBy(SEEK_STEP);
+  else if (e.key === "MediaRewind") plSeekBy(-SEEK_STEP);
+  else if (e.key === "MediaTrackNext") plEpisode(1);
+  else if (e.key === "MediaTrackPrevious") plEpisode(-1);
+  else if (e.key === "Enter" || e.key === " ") {
+    if (onButton || (focus && focus.closest && focus.closest("input, a"))) handled = false;  // the button's own press
+    else if (soundUnlocked && (!tvVideo.muted || userMuted) && !e.repeat) plToggle();
+    else handled = false;
+  } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    const dir = e.key === "ArrowRight" ? 1 : -1;
+    if (onButton) buttons[Math.max(0, Math.min(buttons.length - 1, buttons.indexOf(focus) + dir))]?.focus();
+    else if (!wasIdle || focus === $("plProgress")) plSeekBy(dir * SEEK_STEP);
+  } else if (e.key === "ArrowUp") {
+    if (onButton && plPlayback()) $("plProgress").focus();
+    else if (!wasIdle) handled = false;
+  } else if (e.key === "ArrowDown") {
+    if (!onButton) (buttons.find((b) => b.id === "plPlay") || buttons[0])?.focus();
+  } else handled = false;
+  if (handled) e.preventDefault();
 }, { capture: true });
 
 function startTv(fixedCode) {
@@ -553,7 +847,7 @@ function openTvPeer() {
   tvPeer.on("call", (call) => {
     if (tvCall) tvCall.close();
     tvCall = call;
-    call.answer(undefined, { sdpTransform: hiFiAudio });
+    call.answer(undefined, { sdpTransform: (sdp) => homeBitrateFloor(hiFiAudio(sdp)) });
     call.on("stream", (s) => { playOnTv(s); if (call.peerConnection) smoothPlayback(call.peerConnection); });
     call.on("close", () => { if (tvCall === call) endTvStream(); });
     const pc = call.peerConnection;
@@ -567,6 +861,7 @@ function openTvPeer() {
     conn.on("data", (d) => {
       if (d === "bye") endTvStream();
       else if (d && d.type === "volume") setTvVolume(d.value);  // from the phone's volume slider
+      else if (d && d.type === "state") plUpdate(d);  // where the show is, for the play bar
     });
   });
   const peer = tvPeer;
@@ -617,7 +912,8 @@ function markSoundOn() {
 function onAnyPress(e) {
   if (e.type === "keydown" && (e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack")) return;
   if (!soundUnlocked) markSoundOn();
-  if (tvVideo.srcObject && tvVideo.muted) {
+  if (tvVideo.srcObject && tvVideo.muted && !userMuted) {
+    soundPressAt = Date.now();  // this press turned the sound on; it doesn't also pause
     tvVideo.muted = false;
     tvVideo.play().then(() => { $("soundBtn").hidden = true; $("soundOverlay").hidden = true; })
       .catch(() => { tvVideo.muted = true; });
@@ -635,10 +931,11 @@ function playOnTv(s) {
   tvVideo.hidden = false;
   $("tvWaiting").hidden = true;
   $("tvStatus").hidden = true;
-  $("ppBtn").hidden = false;
-  $("tvControls").classList.add("autohide");
+  $("tvControls").hidden = true;
+  $("player").hidden = false;
+  plWake();
   const hasSound = s.getAudioTracks().length > 0;
-  tvVideo.muted = false;
+  tvVideo.muted = userMuted;
   tvVideo.play().then(() => {
     if (token !== playToken) return;
     $("soundBtn").hidden = true;
@@ -663,8 +960,10 @@ function endTvStream() {
   $("tvStatus").hidden = false;
   $("soundBtn").hidden = true;
   $("soundOverlay").hidden = true;
-  $("ppBtn").hidden = true;
-  $("tvControls").classList.remove("autohide");
+  $("tvControls").hidden = false;
+  $("player").hidden = true;
+  pl.state = null;
+  plRender();
   $("tvStatus").textContent = "Sharing ended. Waiting for a computer to share.";
 }
 
@@ -694,7 +993,6 @@ $("fsBtn").onclick = () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen?.().catch(() => {});
 };
-$("ppBtn").onclick = () => tvPlayPause();
 $("soundBtn").onclick = () => {
   tvVideo.muted = false;
   tvVideo.play().catch(() => {});
