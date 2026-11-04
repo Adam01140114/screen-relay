@@ -169,6 +169,7 @@
   <div class="tv-status" id="tvStatus">Getting a code…</div>
   <div class="tv-controls" id="tvControls">
     <button id="soundBtn" class="sound" hidden>Turn on sound</button>
+    <button id="ppBtn" hidden>Play / Pause</button>
     <button id="fsBtn">Full screen</button>
   </div>
 </div>
@@ -367,6 +368,13 @@ async function startShare(code) {
     const v = { live: false };
     viewers.set(target, v);
     v.conn = sendPeer.connect(target, { reliable: true });
+    // Play/Pause pressed on that screen: handed to the helper on this Mac, which tells the
+    // show's run (the same way the phone's Pause/Play does).
+    v.conn.on("data", (d) => {
+      if (!d || d.type !== "control" || !["toggle", "play", "pause"].includes(d.action)) return;
+      fetch("http://localhost:8766/tv-control", { method: "POST", mode: "no-cors",
+        headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ room: code, action: d.action }) }).catch(() => {});
+    });
     v.call = sendPeer.call(target, stream, { sdpTransform: hiFiAudio });
     if (!v.call) throw new Error("not connected to the server");  // PeerJS gives nothing then
     v.timer = setTimeout(() => { if (!v.live) drop(target, v); }, 15000);  // nobody answered
@@ -494,6 +502,30 @@ function setTvVolume(value, quiet) {
 }
 if (load("screenrelay-volume") !== null) setTvVolume(load("screenrelay-volume"), true);
 
+// Play/Pause from the TV: sent back to the computer that's sharing, which pauses or plays the
+// show itself (so the phone and every other screen see it too).
+const tvConns = new Set();
+function tvPlayPause(action = "toggle") {
+  let sent = false;
+  for (const c of tvConns) if (c.open) try { c.send({ type: "control", action }); sent = true; } catch {}
+  $("volumeOverlay").textContent = sent ? (action === "pause" ? "Pausing…" : action === "play" ? "Playing…" : "Play / Pause…")
+    : "Can't reach the computer right now";
+  $("volumeOverlay").hidden = false;
+  clearTimeout(volumeTimer);
+  volumeTimer = setTimeout(() => { $("volumeOverlay").hidden = true; }, 1500);
+}
+// Remote buttons: the play/pause keys always; OK (Enter) or the space bar too while a show is
+// on screen, unless that press is the one turning the sound on, or it's for a button or box.
+window.addEventListener("keydown", (e) => {
+  if (!tvCall || tvVideo.hidden) return;
+  const action = { MediaPlayPause: "toggle", MediaPlay: "play", MediaPause: "pause" }[e.key];
+  const onControl = e.target && e.target.closest && e.target.closest("button, input, a");
+  const ok = (e.key === "Enter" || e.key === " ") && !onControl && soundUnlocked && !tvVideo.muted;
+  if (!action && !ok) return;
+  e.preventDefault();
+  if (!e.repeat) tvPlayPause(action || "toggle");
+}, { capture: true });
+
 function startTv(fixedCode) {
   show("tv");
   // bookmark-friendly: reopening goes straight to TV mode (with the same fixed room code, if any)
@@ -529,10 +561,14 @@ function openTvPeer() {
       if (tvCall === call && ["failed", "closed"].includes(pc.connectionState)) endTvStream();
     });
   });
-  tvPeer.on("connection", (conn) => conn.on("data", (d) => {
-    if (d === "bye") endTvStream();
-    else if (d && d.type === "volume") setTvVolume(d.value);  // from the phone's volume slider
-  }));
+  tvPeer.on("connection", (conn) => {
+    tvConns.add(conn);
+    conn.on("close", () => tvConns.delete(conn));
+    conn.on("data", (d) => {
+      if (d === "bye") endTvStream();
+      else if (d && d.type === "volume") setTvVolume(d.value);  // from the phone's volume slider
+    });
+  });
   const peer = tvPeer;
   tvPeer.on("disconnected", () => { if (peer === tvPeer && !peer.destroyed) peer.reconnect(); });
   tvPeer.on("error", (err) => {
@@ -599,6 +635,7 @@ function playOnTv(s) {
   tvVideo.hidden = false;
   $("tvWaiting").hidden = true;
   $("tvStatus").hidden = true;
+  $("ppBtn").hidden = false;
   $("tvControls").classList.add("autohide");
   const hasSound = s.getAudioTracks().length > 0;
   tvVideo.muted = false;
@@ -626,6 +663,7 @@ function endTvStream() {
   $("tvStatus").hidden = false;
   $("soundBtn").hidden = true;
   $("soundOverlay").hidden = true;
+  $("ppBtn").hidden = true;
   $("tvControls").classList.remove("autohide");
   $("tvStatus").textContent = "Sharing ended. Waiting for a computer to share.";
 }
@@ -656,6 +694,7 @@ $("fsBtn").onclick = () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen?.().catch(() => {});
 };
+$("ppBtn").onclick = () => tvPlayPause();
 $("soundBtn").onclick = () => {
   tvVideo.muted = false;
   tvVideo.play().catch(() => {});
