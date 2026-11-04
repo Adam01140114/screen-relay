@@ -288,6 +288,56 @@
   .opts input { margin-top: 3px; }
   .muted { color: var(--muted); font-weight: 400; }
   @media (max-width: 520px) { .find { grid-template-columns: 1fr; } main { padding: 20px; } }
+  /* Watch Stream player (Netflix-style, for touch): a tap shows or hides the controls; big
+     ⟲10 / play-pause / 10⟳ in the middle; the progress bar, mute, episodes and fullscreen along
+     the bottom. Every press goes back to the Mac, which plays the show for every screen. */
+  .wp { position: absolute; inset: 0; color: #fff; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  .wp[hidden] { display: none; }
+  .wp .chrome { transition: opacity 0.2s; }
+  .wp.idle .chrome { opacity: 0; pointer-events: none; }
+  .wp-shade { position: absolute; inset: 0; background: rgba(0,0,0,0.38); pointer-events: none; }
+  .wp-top { position: absolute; left: 0; right: 0; top: 0; padding: 8px 12px; pointer-events: none; }
+  .wp-title { font-weight: 700; font-size: 14px; line-height: 1.2; }
+  .wp-sub { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+  .wp-mid { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 28px; }
+  .wp-bot { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 10px 6px; }
+  .wp button { background: none; border: 0; padding: 0; color: #fff; cursor: pointer; border-radius: 50%; }
+  .wp button:disabled { opacity: 0.3; }
+  .wp button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .wp svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+  .wp-mid button { width: 34px; height: 34px; }
+  .wp-mid .wp-big { width: 52px; height: 52px; }
+  .wp-progress { position: relative; height: 26px; display: flex; align-items: center; touch-action: none; cursor: pointer; }
+  .wp-track { position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.35); }
+  .wp-fill { position: absolute; inset: 0; border-radius: 2px; background: #e50914; transform-origin: left center; transform: scaleX(0); }
+  .wp-thumb { position: absolute; top: 50%; left: 0; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #e50914; }
+  .wp-progress.drag .wp-thumb { width: 20px; height: 20px; margin: -10px 0 0 -10px; }
+  .wp-tip { position: absolute; bottom: 26px; transform: translateX(-50%); padding: 2px 7px; border-radius: 5px; background: rgba(20,20,20,0.92);
+    font: 600 13px ui-monospace, Menlo, monospace; white-space: nowrap; pointer-events: none; }
+  .wp-tip[hidden] { display: none; }
+  .wp-row { display: flex; align-items: center; gap: 12px; }
+  .wp-row button { width: 28px; height: 28px; padding: 2px; }
+  .wp-time { font: 500 12px ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .wp-spacer { flex: 1; }
+  .wp:not(.paused) .ic-play, .wp.paused .ic-pause, .wp:not(.muted) .ic-muted, .wp.muted .ic-sound { display: none; }
+  .wp.no-state .needs-state { display: none !important; }
+  .wp-loading { position: absolute; inset: 0; background: #000; display: grid; place-content: center; text-align: center; gap: 6px; padding: 16px; }
+  .wp-loading[hidden] { display: none; }
+  .wp-loading .t { font-weight: 700; font-size: 16px; }
+  .wp-loading .s { font-size: 13px; opacity: 0.75; }
+  /* Fullscreen (Watch Stream): bigger controls. On an iPhone, which can't make part of a page
+     fullscreen, the frame fills the screen instead. */
+  .watch-frame:fullscreen, .watch-frame:-webkit-full-screen { border-radius: 0; aspect-ratio: auto; }
+  .watch-frame.wp-full { position: fixed; inset: 0; z-index: 1000; border-radius: 0; aspect-ratio: auto; height: 100dvh; }
+  html.wp-locked, html.wp-locked body { overflow: hidden; }
+  .watch-frame:fullscreen .wp-mid button, .watch-frame.wp-full .wp-mid button { width: 46px; height: 46px; }
+  .watch-frame:fullscreen .wp-mid .wp-big, .watch-frame.wp-full .wp-mid .wp-big { width: 72px; height: 72px; }
+  .watch-frame:fullscreen .wp-mid, .watch-frame.wp-full .wp-mid { gap: 48px; }
+  .watch-frame:fullscreen .wp-row button, .watch-frame.wp-full .wp-row button { width: 36px; height: 36px; }
+  .watch-frame:fullscreen .wp-title, .watch-frame.wp-full .wp-title { font-size: 18px; }
+  .watch-frame:fullscreen .wp-top, .watch-frame.wp-full .wp-top { padding: max(14px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-left)); }
+  .watch-frame:fullscreen .wp-bot, .watch-frame.wp-full .wp-bot { padding: 0 max(18px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); }
+  .watch-frame:fullscreen .wp-time, .watch-frame.wp-full .wp-time { font-size: 14px; }
 </style>
 </head>
 <body>
@@ -369,6 +419,30 @@
     <div class="watch-frame">
       <video id="watch-video" playsinline autoplay muted></video>
       <p class="watch-wait" id="watch-wait">Waiting for the screen…</p>
+      <div class="wp no-state paused" id="wp" hidden>
+        <div class="wp-loading" id="wp-loading" hidden><div class="t" id="wp-loading-t"></div><div class="s" id="wp-loading-s"></div></div>
+        <div class="wp-shade chrome"></div>
+        <div class="wp-top chrome"><div class="wp-title" id="wp-title"></div><div class="wp-sub" id="wp-sub"></div></div>
+        <div class="wp-mid chrome needs-state">
+          <button id="wp-back" aria-label="Back 10 seconds"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/><text x="12" y="16.4" font-size="6.6" font-weight="700" text-anchor="middle" font-family="sans-serif">10</text></svg></button>
+          <button id="wp-play" class="wp-big" aria-label="Play or pause"><svg viewBox="0 0 24 24" class="ic-play" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><svg viewBox="0 0 24 24" class="ic-pause" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg></button>
+          <button id="wp-fwd" aria-label="Forward 10 seconds"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/><text x="12" y="16.4" font-size="6.6" font-weight="700" text-anchor="middle" font-family="sans-serif">10</text></svg></button>
+        </div>
+        <div class="wp-bot chrome">
+          <div class="wp-progress needs-state" id="wp-progress" role="slider" aria-label="Position in the show">
+            <div class="wp-track"><div class="wp-fill" id="wp-fill"></div><div class="wp-thumb" id="wp-thumb"></div></div>
+            <div class="wp-tip" id="wp-tip" hidden></div>
+          </div>
+          <div class="wp-row">
+            <button id="wp-mute" aria-label="Mute or unmute"><svg viewBox="0 0 24 24" class="ic-sound" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg><svg viewBox="0 0 24 24" class="ic-muted" aria-hidden="true"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg></button>
+            <span class="wp-time needs-state" id="wp-time"></span>
+            <span class="wp-spacer"></span>
+            <button id="wp-prev" class="needs-state" aria-label="Previous episode" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
+            <button id="wp-next" class="needs-state" aria-label="Next episode" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+            <button id="wp-fs" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="watch-buttons">
       <button id="watch-sound">Turn on sound</button>
@@ -937,6 +1011,8 @@
 
   function endWatchStream(text) {
     watchCall = null;
+    $("wp").hidden = true;
+    wp.state = null;
     wv.srcObject = null;
     $("watch-wait").hidden = false;
     $("watch-wait").textContent = text || "Waiting for the screen…";
@@ -1002,13 +1078,22 @@
         if (wv.srcObject !== st) wv.srcObject = st;
         if (call.peerConnection) smoothPlayback(call.peerConnection);
         $("watch-wait").hidden = true;
+        $("wp").hidden = false;
+        wpShow();
         setWatch("live", "Live · room " + watchRoomCode);
         $("watch-sound").hidden = !st.getAudioTracks().length;
         playWithSound();
       });
       call.on("close", () => { if (watchCall === call) endWatchStream("Sharing ended."); });
     });
-    peer.on("connection", conn => conn.on("data", d => { if (d === "bye") endWatchStream("Sharing ended."); }));
+    peer.on("connection", conn => {
+      wpConns.add(conn);
+      conn.on("close", () => wpConns.delete(conn));
+      conn.on("data", d => {
+        if (d === "bye") endWatchStream("Sharing ended.");
+        else if (d && d.type === "state") wpUpdate(d);  // where the show is, for the player
+      });
+    });
     peer.on("disconnected", () => { if (!peer.destroyed) peer.reconnect(); });
     peer.on("error", err => {
       if (peer !== watchPeer) return;
@@ -1394,12 +1479,176 @@
     fsPendingUntil = Date.now() + 4000;
     sendControl("fullscreen");
   });
-  $("watch-here").addEventListener("click", () => {
+  /* ---------- Watch Stream player ---------- */
+  // The same controls as the TV's: the Mac that's sharing says where the show is once a second
+  // ({type: "state"}, over the link it opened to this phone), and presses go back over it.
+  const wpConns = new Set();
+  const WP_STEP = 10;
+  const wp = { state: null, at: 0, paused: true, pendingUntil: 0, seekTo: null, seekTimer: null, idleTimer: null, dragging: false };
+  const wpClock = s => {
+    s = Math.max(0, Math.floor(s || 0));
+    const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = String(s % 60).padStart(2, "0");
+    return h ? h + ":" + String(m).padStart(2, "0") + ":" + x : m + ":" + x;
+  };
+  const wpPlayback = () => wp.state && wp.state.playback;
+  function wpNow() {
+    const p = wpPlayback();
+    if (!p) return 0;
+    const t = p.time + (wp.paused ? 0 : (Date.now() - wp.at) / 1000);
+    return p.duration ? Math.min(t, p.duration) : t;
+  }
+  function wpSend(action, time) {
+    let sent = false;
+    for (const c of wpConns) if (c.open) try { c.send({ type: "control", action, time }); sent = true; } catch (e) {}
+    return sent;
+  }
+  // Pins the bar to what was just asked for, so the Mac's next report (sent before it acted)
+  // doesn't make it jump back for a moment.
+  function wpAssume(changes) {
+    const p = wpPlayback();
+    if (p) { p.time = wpNow(); wp.at = Date.now(); Object.assign(p, changes.playback || {}); }
+    if ("paused" in changes) wp.paused = changes.paused;
+    wp.pendingUntil = Date.now() + 2500;
+    wpRender();
+  }
+  function wpUpdate(d) {
+    const keep = Date.now() < wp.pendingUntil && wpPlayback();
+    if (keep) d.playback = wpPlayback();
+    wp.state = d;
+    if (!keep) { wp.at = Date.now(); wp.paused = !d.playback || !!d.playback.paused; }
+    const ep = d.season ? "Season " + d.season + (d.episode ? " · Episode " + d.episode : "") : "";
+    $("wp-title").textContent = d.title || "";
+    $("wp-sub").textContent = [ep, d.episodeName].filter(Boolean).join(" · ");
+    $("wp-prev").hidden = $("wp-next").hidden = !d.season;
+    $("wp-prev").disabled = !d.hasPrev;
+    $("wp-next").disabled = !d.hasNext;
+    // Between episodes (the Mac is opening the next one): a card instead of the site's pages.
+    const loading = !d.playback && d.loading;
+    $("wp-loading").hidden = !loading;
+    if (loading) {
+      $("wp-loading-t").textContent = d.loading.title || d.title || "";
+      $("wp-loading-s").textContent = d.loading.season
+        ? "Loading Season " + d.loading.season + (d.loading.episode ? " · Episode " + d.loading.episode : "") + "…" : "Loading…";
+    }
+    wpRender();
+  }
+  function wpRender() {
+    const p = wpPlayback(), dur = (p && p.duration) || 0;
+    const t = wp.seekTo != null ? wp.seekTo : wpNow();
+    const f = dur ? Math.max(0, Math.min(1, t / dur)) : 0;
+    $("wp-fill").style.transform = "scaleX(" + f + ")";
+    $("wp-thumb").style.left = f * 100 + "%";
+    $("wp-time").textContent = dur ? wpClock(t) + " / " + wpClock(dur) : "";
+    const el = $("wp");
+    el.classList.toggle("no-state", !p);
+    el.classList.toggle("paused", wp.paused);
+    el.classList.toggle("muted", wv.muted);
+  }
+  setInterval(() => { if (!$("wp").hidden && !wp.paused && !wp.dragging) wpRender(); }, 250);
+
+  function wpShow() {
+    const el = $("wp");
+    el.classList.remove("idle");
+    clearTimeout(wp.idleTimer);
+    wp.idleTimer = setTimeout(() => { if (!wp.paused && !wp.dragging) el.classList.add("idle"); else wpShow(); }, 3500);
+  }
+  function wpHide() { clearTimeout(wp.idleTimer); if (!wp.paused) $("wp").classList.add("idle"); }
+  function wpToggle() {
+    if (!wpPlayback() || !wpSend("toggle")) return;
+    wpAssume({ paused: !wp.paused });
+    wpShow();
+  }
+  function wpSeek(to) {
+    const p = wpPlayback();
+    if (!p) return;
+    wp.seekTo = Math.max(0, Math.min(p.duration ? p.duration - 1 : Infinity, to));
+    wpRender();
+    clearTimeout(wp.seekTimer);  // taps in a row add up (three: 30 seconds) and go as one jump
+    wp.seekTimer = setTimeout(() => {
+      const at = wp.seekTo;
+      wp.seekTo = null;
+      if (wpSend("seek", at)) wpAssume({ playback: { time: at } });
+      else wpRender();
+    }, 450);
+  }
+  const wpSeekBy = delta => wpSeek((wp.seekTo != null ? wp.seekTo : wpNow()) + delta);
+
+  // Fullscreen: the frame with its controls. An iPhone can't make part of a page fullscreen,
+  // so there the frame fills the screen instead (its own video player would hide these controls).
+  function wpFullscreen() {
     const frame = wv.parentElement;
-    if (wv.webkitEnterFullscreen && !frame.requestFullscreen) wv.webkitEnterFullscreen();  // iPhone
-    else if (frame.requestFullscreen) frame.requestFullscreen().catch(() => wv.webkitEnterFullscreen && wv.webkitEnterFullscreen());
-    else if (frame.webkitRequestFullscreen) frame.webkitRequestFullscreen();
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else if (frame.classList.contains("wp-full")) {
+      frame.classList.remove("wp-full");
+      document.documentElement.classList.remove("wp-locked");
+    } else if (frame.requestFullscreen) {
+      frame.requestFullscreen().catch(() => {});
+    } else if (frame.webkitRequestFullscreen) {
+      frame.webkitRequestFullscreen();
+    } else {
+      frame.classList.add("wp-full");
+      document.documentElement.classList.add("wp-locked");
+    }
+    wpShow();
+  }
+
+  // A tap on the picture shows the controls, or hides them if they're showing.
+  $("wp").addEventListener("click", e => {
+    if (e.target.closest("button, .wp-progress")) return;
+    if ($("wp").classList.contains("idle")) wpShow(); else wpHide();
   });
+  $("wp-play").onclick = wpToggle;
+  $("wp-back").onclick = () => { wpSeekBy(-WP_STEP); wpShow(); };
+  $("wp-fwd").onclick = () => { wpSeekBy(WP_STEP); wpShow(); };
+  $("wp-mute").onclick = () => {
+    if (wv.muted) unlockSound(); else { wv.muted = true; setSoundButton(); }
+    wpRender();
+    wpShow();
+  };
+  $("wp-prev").onclick = () => { if (!$("wp-prev").disabled) wpSend("prev"); wpShow(); };
+  $("wp-next").onclick = () => { if (!$("wp-next").disabled) wpSend("next"); wpShow(); };
+  $("wp-fs").onclick = wpFullscreen;
+  wv.addEventListener("volumechange", wpRender);
+
+  // The progress bar: touch or drag to pick a spot (the time shows above it), let go to jump.
+  (() => {
+    const bar = $("wp-progress"), tip = $("wp-tip");
+    const at = e => {
+      const r = bar.querySelector(".wp-track").getBoundingClientRect(), p = wpPlayback();
+      const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      return { f, t: f * ((p && p.duration) || 0) };
+    };
+    const move = e => {
+      const { f, t } = at(e);
+      wp.seekTo = t;
+      tip.textContent = wpClock(t);
+      tip.style.left = f * 100 + "%";
+      tip.hidden = false;
+      wpRender();
+    };
+    bar.addEventListener("pointerdown", e => {
+      if (!wpPlayback() || !wpPlayback().duration) return;
+      wp.dragging = true;
+      bar.classList.add("drag");
+      bar.setPointerCapture(e.pointerId);
+      clearTimeout(wp.seekTimer);
+      move(e);
+      wpShow();
+    });
+    bar.addEventListener("pointermove", e => { if (wp.dragging) move(e); });
+    const finish = e => {
+      if (!wp.dragging) return;
+      wp.dragging = false;
+      bar.classList.remove("drag");
+      tip.hidden = true;
+      wpSeek(at(e).t);
+      wpShow();
+    };
+    bar.addEventListener("pointerup", finish);
+    bar.addEventListener("pointercancel", finish);
+  })();
+  $("watch-here").addEventListener("click", wpFullscreen);
   window.addEventListener("pagehide", () => { if (watchPeer) watchPeer.destroy(); });  // free the slot
 
   /* ---------- Pick a result (phone) ---------- */

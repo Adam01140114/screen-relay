@@ -107,6 +107,10 @@
   #tv .player .chrome { transition: opacity 0.25s; }
   #tv .player.idle { cursor: none; }
   #tv .player.idle .chrome { opacity: 0; pointer-events: none; }
+  /* Between episodes (the Mac is opening the next one): a card over the site's pages. */
+  #tv .pl-loading { position: absolute; inset: 0; background: #000; display: grid; place-content: center; text-align: center; gap: 12px; }
+  #tv .pl-loading .t { font: 700 clamp(1.6rem, 3.6vw, 3.2rem)/1.1 var(--display); color: #fff; }
+  #tv .pl-loading .s { font: 500 clamp(1rem, 1.8vw, 1.6rem) var(--body); color: var(--tv-muted); }
   #tv .player-top { position: absolute; left: 0; right: 0; top: 0; padding: clamp(18px, 3vw, 40px) clamp(20px, 3.5vw, 56px) 80px;
     background: linear-gradient(rgba(0,0,0,0.75), transparent); pointer-events: none; }
   #tv .pl-title { font: 700 clamp(1.3rem, 2.6vw, 2.4rem)/1.1 var(--display); color: #fff; }
@@ -203,6 +207,7 @@
   </div>
   <video id="tvVideo" autoplay playsinline hidden></video>
   <div class="player no-state paused" id="player" hidden>
+    <div class="pl-loading" id="plLoading" hidden><div class="t" id="plLoadingT"></div><div class="s" id="plLoadingS"></div></div>
     <div class="player-top chrome"><div class="pl-title" id="plTitle"></div><div class="pl-sub" id="plSub"></div></div>
     <div class="pl-flash" id="plFlash"></div>
     <div class="player-bar chrome" id="plBar">
@@ -643,6 +648,14 @@ function plUpdate(d) {
   $("plPrev").hidden = $("plNext").hidden = !d.season;  // TV shows only
   $("plPrev").disabled = !d.hasPrev;
   $("plNext").disabled = !d.hasNext;
+  // Between episodes (the Mac is opening the next one): a card instead of the site's pages.
+  const loading = !d.playback && d.loading;
+  $("plLoading").hidden = !loading;
+  if (loading) {
+    $("plLoadingT").textContent = d.loading.title || d.title || "";
+    $("plLoadingS").textContent = d.loading.season
+      ? "Loading Season " + d.loading.season + (d.loading.episode ? " · Episode " + d.loading.episode : "") + "…" : "Loading…";
+  }
   plRender();
 }
 function plRender() {
@@ -962,6 +975,7 @@ function endTvStream() {
   $("soundOverlay").hidden = true;
   $("tvControls").hidden = false;
   $("player").hidden = true;
+  $("plLoading").hidden = true;
   pl.state = null;
   plRender();
   $("tvStatus").textContent = "Sharing ended. Waiting for a computer to share.";
