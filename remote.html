@@ -1242,13 +1242,11 @@
   if (savedNet) { const r = document.querySelector(`input[name=tvnet][value="${savedNet}"]`); if (r) r.checked = true; }
   document.querySelectorAll("input[name=tvnet]").forEach(r => r.addEventListener("change", showTvLink));
   $("runcmd").addEventListener("click", () => REQUESTS ? requestPlay() : runCommand());
-  // View VCR: this page again in its VCR view (the remote link's key is remembered, so it isn't needed in the link).
-  // In the TV's Remote sidebar it opens there, with a button back to the remote for that room.
+  // View VCR: this page in its VCR view, in a new tab, so the remote stays open in this one
+  // (the remote link's key is remembered, so it isn't needed in the link).
   const embedRoom = (location.hash.match(/(?:^#|&)room=([A-Za-z0-9]{4,6})/) || [])[1];
   $("view-vcr").addEventListener("click", () => {
-    const inSidebar = document.documentElement.classList.contains("embed");
-    location.hash = inSidebar ? "requests&back=remote" + (embedRoom ? "&room=" + embedRoom : "") : "requests";
-    location.reload();
+    window.open(location.pathname + location.search + "#requests", "_blank", "noopener");
   });
   $("back-remote").addEventListener("click", () => {
     location.hash = "remote" + (embedRoom ? "&room=" + embedRoom : "");
