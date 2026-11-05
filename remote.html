@@ -1392,16 +1392,24 @@
     $("rq-list").addEventListener("click", async e => {
       const watch = e.target.closest(".rq-watch"), end = e.target.closest(".rq-end"), play = e.target.closest(".rq-play");
       const over = e.target.closest(".rq-over");
-      if (over) {  // back to the beginning of what's playing there (logged as a jump to 0:00)
+      if (over) {
+        // Start over: the same as End, then starting it again in a new room of its own. What
+        // this room was playing leaves History (like End); the new room plays it from the start.
         const r = rqRooms.find(x => x.room === over.dataset.room);
-        if (r && r.playback) { r.playback.time = 0; rqAt = Date.now(); drawRooms(); }
+        if (!r) return;
+        over.disabled = true;
+        over.textContent = "Starting over…";
         try {
-          const res = await api("/control", { room: over.dataset.room, action: "seek", time: 0 });
-          if (!res.ok) throw new Error(res.body.error || "Couldn't reach that room's video.");
+          const room = await freeRoom();
+          if (!room) throw new Error("Failed to fetch");
+          const stop = await api("/stop", { room: r.room, forget: true });
+          if (!stop.ok) throw new Error(stop.body.error || "Couldn't end it.");
+          const res = await api("/replay", { title: r.title, room, season: r.season || null, episode: r.episode || null });
+          if (!res.ok) throw new Error(res.body.error || "Couldn't start it again.");
         } catch (err) {
           alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
         }
-        setTimeout(refreshRooms, 1500);
+        refreshRooms();
         return;
       }
       if (play) {  // Play or Pause that room: shown straight away, then done by the Mac
