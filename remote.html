@@ -557,7 +557,6 @@
   .rq-actions { display: grid; gap: 6px; }
   .rq-actions button { padding: 9px 14px; font-weight: 700; border: 0; border-radius: 6px; }
   .rq-actions .rq-watch { background: #fff; color: #000; }
-  .rq-actions .rq-over { background: #2a2a2a; color: #fff; font-size: 13px; padding: 6px 10px; }
   .rq-replay { padding: 6px 10px; border: 0; border-radius: 6px; background: #fff; color: #000; font-size: 12px; font-weight: 700; }
   .rq-ep-acts { grid-column: 2; grid-row: 1 / span 3; display: grid; gap: 6px; align-self: center; }
   .rq-ep .rq-ep-acts .rq-del { grid-column: auto; grid-row: auto; }
@@ -1307,7 +1306,6 @@
               ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Play`
               : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>Pause`}</button>` : ""}
           <button class="rq-watch" data-link="${escapeHtml(link || "")}">Watch</button>
-          ${pb ? `<button class="rq-over" data-room="${escapeHtml(r.room)}">Start over</button>` : ""}
           <button class="rq-end" data-room="${escapeHtml(r.room)}">End</button>
         </div>
       </div>`;
@@ -1368,19 +1366,6 @@
     setInterval(() => { if (rqRooms.some(r => r.playback && !r.playback.paused)) drawRooms(); }, 1000);
     $("rq-list").addEventListener("click", async e => {
       const watch = e.target.closest(".rq-watch"), end = e.target.closest(".rq-end"), play = e.target.closest(".rq-play");
-      const over = e.target.closest(".rq-over");
-      if (over) {  // back to the beginning of what's playing there
-        const r = rqRooms.find(x => x.room === over.dataset.room);
-        if (r && r.playback) { r.playback.time = 0; rqAt = Date.now(); drawRooms(); }
-        try {
-          const res = await api("/control", { room: over.dataset.room, action: "seek", time: 0 });
-          if (!res.ok) throw new Error(res.body.error || "Couldn't reach that room's video.");
-        } catch (err) {
-          alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
-        }
-        setTimeout(refreshRooms, 1500);
-        return;
-      }
       if (play) {  // Play or Pause that room: shown straight away, then done by the Mac
         const r = rqRooms.find(x => x.room === play.dataset.room), act = play.dataset.act;
         if (r && r.playback) {
