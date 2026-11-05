@@ -1328,6 +1328,14 @@
     rqTimer = setTimeout(refreshRooms, document.hidden ? 15000 : 3000);
   }
   let rqDragging = false;  // a progress bar is being dragged: the list isn't redrawn under the finger
+  // Where Watch opens a room: through Tailscale when this page was opened that way (the Mac's
+  // Tailscale name or address, the relay's port), on the Wi-Fi at home, otherwise the public link.
+  function roomLink(r) {
+    const host = location.hostname;
+    if (!REMOTE && (/\.ts\.net$/i.test(host) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host)))
+      return `http://${host}:8765/#tv=${encodeURIComponent(r.room)}`;
+    return REMOTE ? r.publicLink : (r.lanLink || r.publicLink);
+  }
   function drawRooms() {
     if (rqDragging) return;
     $("rq-count").hidden = !rqRooms.length;
@@ -1336,11 +1344,7 @@
       $("rq-list").innerHTML = `<div class="rq-empty">Nothing is playing. Request something above.</div>`;
       return;
     }
-    // The list is redrawn every few seconds; each room keeps its poster image from before
-    // (a new <img> would load it again, and flash on a phone).
-    const posters = new Map([...$("rq-list").querySelectorAll(".rq-item[data-room]")]
-      .map(el => [el.dataset.room, el.querySelector(".recent-thumb img")]));
-    $("rq-list").innerHTML = rqRooms.map(r => {
+    const html = rqRooms.map(r => {
       const pb = r.playback, live = recentItems.find(it => (it.live || []).includes(r.room));
       const t = pb ? Math.min(pb.duration || Infinity, pb.time + (pb.paused ? 0 : (Date.now() - rqAt) / 1000)) : 0;
       const ep = r.season ? `Season ${r.season}` + (r.episode ? ` · Episode ${r.episode}` : "") + (r.episodeName ? ` · ${r.episodeName}` : "")
@@ -1348,7 +1352,7 @@
       const state = pb ? `${pb.paused ? "Paused" : "Playing"} · ${clock(t)} of ${clock(pb.duration)}`
         : r.loading ? "Loading" + (r.loading.season ? ` Season ${r.loading.season}` + (r.loading.episode ? ` · Episode ${r.loading.episode}` : "") : "") + "…"
         : "Starting…";
-      const link = REMOTE ? r.publicLink : (r.lanLink || r.publicLink);
+      const link = roomLink(r);
       return `<div class="rq-item" data-room="${escapeHtml(r.room)}">
         <span class="recent-thumb">${live ? posterHtml(live) : ""}</span>
         <div class="rq-text">
@@ -1371,10 +1375,30 @@
         </div>
       </div>`;
     }).join("");
-    for (const el of $("rq-list").querySelectorAll(".rq-item[data-room]")) {
-      const before = posters.get(el.dataset.room), img = el.querySelector(".recent-thumb img");
-      if (before && img && before.getAttribute("src") === img.getAttribute("src")) img.replaceWith(before);
+    // Redrawn every second while something plays (the clock and bar move), so each room is
+    // updated in place: only the parts whose text changed are replaced, and its poster is
+    // left alone unless it's a different picture (a poster replaced or moved flashes on a phone).
+    const fresh = document.createElement("div");
+    fresh.innerHTML = html;
+    const list = $("rq-list"), old = new Map([...list.querySelectorAll(":scope > .rq-item[data-room]")].map(el => [el.dataset.room, el]));
+    if (!old.size) list.innerHTML = "";
+    let at = list.firstElementChild;
+    for (const item of [...fresh.children]) {
+      const keep = old.get(item.dataset.room);
+      old.delete(item.dataset.room);
+      if (!keep) { list.insertBefore(item, at); continue; }
+      [...item.children].forEach((part, i) => {
+        const now = keep.children[i];
+        if (!now || now.outerHTML === part.outerHTML) return;
+        const img = part.querySelector("img"), had = now.querySelector("img");
+        if (part.classList.contains("recent-thumb") && img && had && img.getAttribute("src") === had.getAttribute("src")) return;
+        now.replaceWith(part);
+      });
+      if (keep !== at) list.insertBefore(keep, at);
+      at = keep.nextElementSibling;
     }
+    for (const gone of old.values()) gone.remove();
+    for (const stray of [...list.children]) if (!stray.matches(".rq-item[data-room]")) stray.remove();
   }
   // Each room's progress bar: press or drag to a spot (the time shows above it), let go to jump
   // there. The Mac does the jump, and the watch log records it.
