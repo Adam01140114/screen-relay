@@ -81,6 +81,7 @@
     padding: 10px 14px; border-radius: 10px; border: 2px solid var(--tv-muted); background: transparent; color: var(--tv-fg); }
   #tv .room-switch input:focus, #tv .room-switch button:focus { outline: 3px solid #ffd166; outline-offset: 2px; }
   #tv .room-switch button { font: 600 clamp(1rem, 1.8vw, 1.4rem) inherit; font-family: inherit; padding: 10px 18px; border-radius: 10px; border: 0; background: var(--tv-fg); color: var(--tv-bg); cursor: pointer; }
+  #tv .room-switch .remote-card-btn { background: #e50914; color: #fff; }
   #tv .room-switch-error { min-height: 1.2em; color: #ff8a8a; font-size: clamp(0.9rem, 1.5vw, 1.2rem); }
   @media (max-aspect-ratio: 1/1) { #tv .room-switch div { justify-content: center; } }
   #tv .sound-prompt { margin: 22px 0 0; font-size: clamp(1rem, 1.9vw, 1.6rem); color: #ffd166; max-width: 30ch; }
@@ -215,6 +216,7 @@
         <div>
           <input id="roomSwitchInput" inputmode="text" maxlength="6" placeholder="Code" spellcheck="false" autocapitalize="characters">
           <button type="submit">Show room</button>
+          <button type="button" id="remoteCardBtn" class="remote-card-btn">Remote</button>
         </div>
         <span class="room-switch-error" id="roomSwitchError"></span>
       </form>
@@ -892,6 +894,7 @@ function toggleRemote(open = $("remotePanel").hidden) {
 }
 $("plRemote").onclick = () => toggleRemote();
 $("remoteBtn").onclick = () => toggleRemote();
+$("remoteCardBtn").onclick = () => toggleRemote();  // the same, next to "Show room" on the waiting screen
 $("remoteClose").onclick = () => toggleRemote(false);
 
 // The progress bar: press or drag to pick a spot (the time shows above it), let go to jump there.
