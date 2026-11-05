@@ -1395,7 +1395,7 @@
       if (watch && watch.dataset.link) window.open(watch.dataset.link, "_blank", "noopener");
       if (end) {
         const room = end.dataset.room;
-        if (!confirm(`End what's playing in room ${room}? It stops on every screen watching it, and isn't kept in History.`)) return;
+        if (!confirm(`End what's playing in room ${room}? It stops on every screen watching it. This play won't be added to History, but anything already in History (like a time you watched it to the end) stays.`)) return;
         end.disabled = true;
         try {
           const res = await api("/stop", { room, forget: true });  // gone completely, History and watch log too
