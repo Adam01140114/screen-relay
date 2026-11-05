@@ -486,6 +486,10 @@
   html.simple .wp-shade { background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.25) 35%, rgba(0,0,0,.25) 65%, rgba(0,0,0,.7)); }
   /* ===== VCR (html.requests) ===== */
   html.requests h1::before { content: "VCR"; }
+  /* View VCR: on the phone page only (not the VCR itself, nor the TV's Remote sidebar). */
+  .view-vcr { display: none; }
+  html.simple:not(.requests):not(.embed) .view-vcr { display: block; margin-top: 10px; padding: 12px; border: 0; border-radius: 6px;
+    background: #2a2a2a; color: #fff; font-size: 16px; font-weight: 700; }
   /* The TV's Remote sidebar: no picture of its own, nor the phone-only buttons. */
   html.embed body { padding-top: 0; }
   html.embed h1::before { content: "REMOTE"; font-size: 24px; }
@@ -633,6 +637,7 @@
   </div>
   <button id="runcmd" class="wide run">Run command</button>
   </div>
+  <button id="view-vcr" class="wide view-vcr">View VCR</button>
   <section class="rq rq-card" id="rq" aria-label="Playing now">
     <h2>Playing now <span class="rq-count" id="rq-count" hidden></span></h2>
     <p class="hint">Each request plays in a room of its own, so several can play at once. Watch opens that room's screen.</p>
@@ -1220,6 +1225,11 @@
   if (savedNet) { const r = document.querySelector(`input[name=tvnet][value="${savedNet}"]`); if (r) r.checked = true; }
   document.querySelectorAll("input[name=tvnet]").forEach(r => r.addEventListener("change", showTvLink));
   $("runcmd").addEventListener("click", () => REQUESTS ? requestPlay() : runCommand());
+  // View VCR: this page again in its VCR view (the remote link's key is remembered, so it isn't needed in the link).
+  $("view-vcr").addEventListener("click", () => {
+    location.hash = "requests";
+    location.reload();
+  });
 
   /* ---------- VCR ---------- */
   // A request gets a room no one is using (four letters and digits, picked at random), then
