@@ -174,6 +174,17 @@
   #tv .pl-flash.show { animation: pl-flash 0.7s ease-out; }
   @keyframes pl-flash { from { opacity: 1; transform: translate(-50%, -50%) scale(0.8); } to { opacity: 0; transform: translate(-50%, -50%) scale(1.35); } }
   @media (prefers-reduced-motion: reduce) { .pill .dot, #tv .pl-flash.show { animation: none !important; } }
+  /* Phones (portrait): two rows, so every control fits. Play, the jumps, sound and the time on
+     top; the episode, subtitle, Remote and fullscreen buttons under them. */
+  @media (max-width: 600px) {
+    #tv .pl-row { flex-wrap: wrap; gap: 4px 6px; }
+    #tv .pl-spacer { flex: 0 0 100%; height: 0; }
+    #tv .pl-btn { width: 40px; height: 40px; padding: 7px; }
+    #tv .pl-time { font-size: 0.95rem; margin-left: 4px; }
+    #tv .pl-remote { height: 40px; padding: 6px 14px 6px 8px; }
+    #tv .pl-remote svg { width: 24px; height: 24px; }
+    #tv #plFs { margin-left: auto; }
+  }
 </style>
 </head>
 <body>
