@@ -1336,6 +1336,10 @@
       $("rq-list").innerHTML = `<div class="rq-empty">Nothing is playing. Request something above.</div>`;
       return;
     }
+    // The list is redrawn every few seconds; each room keeps its poster image from before
+    // (a new <img> would load it again, and flash on a phone).
+    const posters = new Map([...$("rq-list").querySelectorAll(".rq-item[data-room]")]
+      .map(el => [el.dataset.room, el.querySelector(".recent-thumb img")]));
     $("rq-list").innerHTML = rqRooms.map(r => {
       const pb = r.playback, live = recentItems.find(it => (it.live || []).includes(r.room));
       const t = pb ? Math.min(pb.duration || Infinity, pb.time + (pb.paused ? 0 : (Date.now() - rqAt) / 1000)) : 0;
@@ -1345,7 +1349,7 @@
         : r.loading ? "Loading" + (r.loading.season ? ` Season ${r.loading.season}` + (r.loading.episode ? ` · Episode ${r.loading.episode}` : "") : "") + "…"
         : "Starting…";
       const link = REMOTE ? r.publicLink : (r.lanLink || r.publicLink);
-      return `<div class="rq-item">
+      return `<div class="rq-item" data-room="${escapeHtml(r.room)}">
         <span class="recent-thumb">${live ? posterHtml(live) : ""}</span>
         <div class="rq-text">
           <span class="rq-room">Room ${escapeHtml(r.room)}</span>
@@ -1367,6 +1371,10 @@
         </div>
       </div>`;
     }).join("");
+    for (const el of $("rq-list").querySelectorAll(".rq-item[data-room]")) {
+      const before = posters.get(el.dataset.room), img = el.querySelector(".recent-thumb img");
+      if (before && img && before.getAttribute("src") === img.getAttribute("src")) img.replaceWith(before);
+    }
   }
   // Each room's progress bar: press or drag to a spot (the time shows above it), let go to jump
   // there. The Mac does the jump, and the watch log records it.
@@ -1557,7 +1565,14 @@
     e.preventDefault();
     window.open(b.dataset.url, "_blank", "noopener");
   });
-  $("view-recordings").addEventListener("click", () => { location.href = "http://10.0.0.122:7777/"; });
+  // View Recordings: the Recordings app by the same route this page came: Tailscale's HTTPS
+  // link when opened through Tailscale, this Mac's own address here, otherwise the Wi-Fi.
+  $("view-recordings").addEventListener("click", () => {
+    const host = location.hostname;
+    location.href = host.endsWith(".ts.net") ? `https://${host}/`
+      : ["localhost", "127.0.0.1"].includes(host) ? "http://localhost:7777/"
+      : "http://10.0.0.122:7777/";
+  });
   // Play from start: that episode (or movie) again from the beginning, in a room of its own.
   $("rq-done-list").addEventListener("click", async e => {
     const btn = e.target.closest(".rq-replay");
