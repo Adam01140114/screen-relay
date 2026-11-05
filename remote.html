@@ -494,6 +494,19 @@
   .rq-count-done { background: #46d369 !important; color: #000 !important; }
   .rq-done-item { grid-template-columns: 52px 1fr; }
   .rq-done-item .recent-thumb { width: 52px; }
+  /* History: a show per row; tap it to open its episodes. */
+  .rq-show { border-radius: 6px; background: #262626; overflow: hidden; }
+  .rq-show + .rq-show { margin-top: 8px; }
+  .rq-show summary { list-style: none; display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center;
+    padding: 10px; cursor: pointer; }
+  .rq-show summary::-webkit-details-marker { display: none; }
+  .rq-show summary .recent-thumb { width: 52px; border: 0; border-radius: 4px; background: #2a2a2a; }
+  .rq-chev { width: 22px; height: 22px; fill: #aaa; transition: transform .2s; }
+  .rq-show[open] .rq-chev { transform: rotate(180deg); }
+  .rq-eps { display: grid; gap: 1px; padding: 0 10px 10px; }
+  .rq-ep { display: grid; gap: 2px; padding: 10px 12px; border-radius: 4px; background: #1d1d1d; }
+  .rq-ep-title { font-weight: 700; font-size: 14px; }
+  .rq-took { font-size: 12px; color: #ddd; }
   .rq-when { font-size: 12px; color: var(--muted); }
   .rq-when.done { color: #46d369; }
   .rq-filter { display: flex; gap: 6px; margin: 2px 0 4px; }
@@ -599,7 +612,7 @@
   </section>
   <section class="rq rq-card" id="rq-done" aria-label="History">
     <h2>History <span class="rq-count rq-count-done" id="rq-done-count" hidden></span></h2>
-    <p class="hint">Everything played before, newest first (from the watch log). A green check means it played all the way to the end.</p>
+    <p class="hint">Everything played before, newest first (from the watch log). Tap a show for its episodes; a green check means it played all the way to the end.</p>
     <div class="rq-filter" role="tablist">
       <button class="on" data-filter="all" role="tab">All</button>
       <button data-filter="finished" role="tab">Watched to the end</button>
@@ -1286,41 +1299,63 @@
   async function refreshFinished() {
     try {
       const res = await api("/finished");
-      if (res.ok && Array.isArray(res.body.items)) {
-        const key = JSON.stringify(res.body.items);
-        if (key !== rqDoneKey) { rqDoneKey = key; drawFinished(res.body.items); }
+      if (res.ok && Array.isArray(res.body.shows)) {
+        const key = JSON.stringify(res.body.shows);
+        if (key !== rqDoneKey) { rqDoneKey = key; drawFinished(res.body.shows); }
       }
     } catch (e) {}
     setTimeout(refreshFinished, document.hidden ? 120000 : 15000);
   }
   let rqHistory = [], rqFilter = "all";
-  function drawFinished(items) {
-    if (items) rqHistory = items;
-    const shown = rqFilter === "finished" ? rqHistory.filter(it => it.finished) : rqHistory;
-    $("rq-done-count").hidden = !shown.length;
-    $("rq-done-count").textContent = shown.length;
-    if (!shown.length) {
+  const rqOpen = new Set();  // shows opened, kept open when the list refreshes
+  // 1325 seconds -> "22m 5s"; an hour or more -> "1h 4m".
+  const took = sec => sec >= 3600 ? `${Math.floor(sec / 3600)}h ${Math.floor(sec / 60) % 60}m`
+                                  : `${Math.floor(sec / 60)}m ${sec % 60}s`;
+  function drawFinished(shows) {
+    if (shows) rqHistory = shows;
+    const list = rqHistory.map(sh => ({ ...sh, episodes: rqFilter === "finished" ? sh.episodes.filter(ep => ep.finished) : sh.episodes }))
+                          .filter(sh => sh.episodes.length);
+    $("rq-done-count").hidden = !list.length;
+    $("rq-done-count").textContent = list.length;
+    if (!list.length) {
       $("rq-done-list").innerHTML = `<div class="rq-empty">${rqFilter === "finished" ? "Nothing has played all the way through yet."
         : "Nothing has been played yet."}</div>`;
       return;
     }
     const at = (d, t) => { try { return new Date(d + "T" + t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
                            catch (e) { return d + " " + t; } };
-    $("rq-done-list").innerHTML = shown.map(it => {
-      const ep = it.season ? `Season ${it.season}` + (it.episode ? ` · Episode ${it.episode}` : "") + (it.episode_name ? ` · ${it.episode_name}` : "")
-                           : it.kind === "movie" ? "Movie" : "";
-      const when = it.finished ? `✓ Watched to the end · ${at(it.ended.date, it.ended.time)}`
-        : `Started ${at(it.date, it.time)}` + (it.position ? ` · stopped around ${it.position}` : " · didn't finish");
-      return `<div class="rq-item rq-done-item">
-        <span class="recent-thumb">${it.thumbnail ? `<img src="${escapeHtml(it.thumbnail)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</span>
-        <div class="rq-text">
-          <span class="rq-title">${escapeHtml(it.content || "Untitled")}</span>
-          ${ep ? `<span class="rq-sub">${escapeHtml(ep)}</span>` : ""}
-          <span class="rq-when${it.finished ? " done" : ""}">${escapeHtml(when)} · Room ${escapeHtml(it.room || "")}</span>
-        </div>
-      </div>`;
+    $("rq-done-list").innerHTML = list.map(sh => {
+      const key = sh.show_url || sh.content || "";
+      const done = sh.episodes.filter(ep => ep.finished).length, last = sh.episodes[0];
+      const count = sh.kind === "movie" ? "Movie" : `${sh.episodes.length} episode${sh.episodes.length > 1 ? "s" : ""}`;
+      const total = sh.episodes.reduce((sum, ep) => sum + (ep.watched || 0), 0);
+      return `<details class="rq-show" data-key="${escapeHtml(key)}"${rqOpen.has(key) ? " open" : ""}>
+        <summary>
+          <span class="recent-thumb">${sh.thumbnail ? `<img src="${escapeHtml(sh.thumbnail)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</span>
+          <span class="rq-text">
+            <span class="rq-title">${escapeHtml(sh.content || "Untitled")}</span>
+            <span class="rq-sub">${escapeHtml(count)}${done ? ` · ${done} watched to the end` : ""}${total ? ` · ${took(total)} watched` : ""}</span>
+            <span class="rq-when">Last played ${escapeHtml(at(last.date, last.time))}</span>
+          </span>
+          <svg class="rq-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+        </summary>
+        <div class="rq-eps">${sh.episodes.map(ep => {
+          const name = ep.season ? `Season ${ep.season} · Episode ${ep.episode}` + (ep.episode_name ? ` · ${ep.episode_name}` : "") : "Movie";
+          const state = ep.finished ? `✓ Watched to the end · ${at(ep.ended.date, ep.ended.time)}`
+            : `Started ${at(ep.date, ep.time)}` + (ep.position ? ` · stopped around ${ep.position}` : " · didn't finish");
+          return `<div class="rq-ep">
+            <span class="rq-ep-title">${escapeHtml(name)}</span>
+            <span class="rq-when${ep.finished ? " done" : ""}">${escapeHtml(state)} · Room ${escapeHtml(ep.room || "")}</span>
+            ${ep.watched != null ? `<span class="rq-took">Took ${took(ep.watched)} (not counting pauses)</span>` : ""}
+          </div>`;
+        }).join("")}</div>
+      </details>`;
     }).join("");
   }
+  $("rq-done-list").addEventListener("toggle", e => {
+    const d = e.target.closest && e.target.closest(".rq-show");
+    if (d) d.open ? rqOpen.add(d.dataset.key) : rqOpen.delete(d.dataset.key);
+  }, true);
   document.querySelector(".rq-filter").addEventListener("click", e => {
     const b = e.target.closest("button[data-filter]");
     if (!b) return;
