@@ -580,6 +580,38 @@
   .rq-actions .rq-play { display: flex; align-items: center; justify-content: center; gap: 4px; background: #2a2a2a; color: #fff; }
   .rq-actions .rq-play svg { width: 16px; height: 16px; fill: currentColor; }
   .rq-actions .rq-end { background: rgba(229, 9, 20, .16); color: #ff4a52; font-size: 13px; padding: 6px 10px; }
+  /* ===== VCR buttons: a clear order of importance, all easy to see on the dark cards =====
+     Watch is the main action (solid white); Pause/Play and Start over are secondary (light
+     fill with an outline); End is destructive (red outline, last, set apart). Same height
+     and width for all, 40px tall (easy to hit), an icon with every label, and visible
+     hover, press and keyboard-focus states. */
+  html.requests .rq-actions { display: grid; gap: 8px; min-width: 136px; align-self: center; }
+  html.requests .rq-actions button { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+    min-height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid transparent;
+    font: 700 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: .01em;
+    transition: background-color .15s, border-color .15s, transform .1s; cursor: pointer; }
+  html.requests .rq-actions button svg { width: 18px; height: 18px; flex: none; fill: currentColor; }
+  html.requests .rq-actions button:active:not(:disabled) { transform: scale(.97); }
+  html.requests .rq-actions button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  html.requests .rq-actions button:disabled { opacity: .5; cursor: default; }
+  html.requests .rq-actions .rq-watch { background: #fff; color: #111; }
+  html.requests .rq-actions .rq-watch:hover { background: #e6e6e6; }
+  html.requests .rq-actions :is(.rq-play, .rq-over) { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.35); color: #fff; }
+  html.requests .rq-actions :is(.rq-play, .rq-over):hover { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.55); }
+  html.requests .rq-actions .rq-end { margin-top: 4px; background: transparent; border-color: rgba(255,90,95,.75); color: #ff6b6f; }
+  html.requests .rq-actions .rq-end:hover { background: rgba(229,9,20,.18); border-color: #ff5a5f; }
+  /* On a phone the buttons go in a row of two under the show, instead of a narrow column. */
+  @media (max-width: 520px) {
+    html.requests #rq-list .rq-item { grid-template-columns: 68px 1fr; }
+    html.requests .rq-actions { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; min-width: 0; }
+    html.requests .rq-actions .rq-end { margin-top: 0; }
+  }
+  /* View Recordings and the History filter: outlined so they stand out from the cards. */
+  html.requests .view-recordings { background: transparent !important; border: 1px solid rgba(255,255,255,.35) !important; color: #fff;
+    border-radius: 8px !important; }
+  html.requests .view-recordings:hover { background: rgba(255,255,255,.08) !important; }
+  html.requests .rq-filter button { border: 1px solid rgba(255,255,255,.3); background: transparent; color: #e6e6e6; padding: 7px 14px; }
+  html.requests .rq-filter button.on { background: #fff; border-color: #fff; color: #111; }
 </style>
 </head>
 <body>
@@ -1326,12 +1358,12 @@
             <span class="rq-tip" hidden></span></div>` : ""}
         </div>
         <div class="rq-actions">
+          <button class="rq-watch" data-link="${escapeHtml(link || "")}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zM10 7.5v7l6-3.5z"/></svg>Watch</button>
           ${pb ? `<button class="rq-play" data-room="${escapeHtml(r.room)}" data-act="${pb.paused ? "play" : "pause"}">${pb.paused
               ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Play`
               : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>Pause`}</button>` : ""}
-          ${pb ? `<button class="rq-over" data-room="${escapeHtml(r.room)}">Start over</button>` : ""}
-          <button class="rq-watch" data-link="${escapeHtml(link || "")}">Watch</button>
-          <button class="rq-end" data-room="${escapeHtml(r.room)}">End</button>
+          ${pb ? `<button class="rq-over" data-room="${escapeHtml(r.room)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>Start over</button>` : ""}
+          <button class="rq-end" data-room="${escapeHtml(r.room)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>End</button>
         </div>
       </div>`;
     }).join("");
