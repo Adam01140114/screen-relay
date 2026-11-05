@@ -358,7 +358,9 @@ function emptySeasonCard(title, season, key, open, missing) {
     </article>
     ${open ? `<div class="season-episodes" role="group" aria-label="${esc(title)} season ${esc(season)} episodes">
       ${missing.length ? missing.map(([n, name]) => missingCard(title, season, n, name)).join('')
-        : '<p class="hint season-unknown">Its episodes haven\'t been looked up yet. Open this season once on the phone page (or request any episode of it with +) and they\'ll show here.</p>'}</div>` : ''}`;
+        : `<p class="hint season-unknown">${state.catalog[title]?.lookupFailed
+          ? 'Couldn\'t reach the site for its episodes just now. Trying again in a few minutes…'
+          : 'Looking up its episodes on the site…'}</p>`}</div>` : ''}`;
 }
 
 // An episode not recorded: the generic picture, and Request (sends it to the VCR).
@@ -1562,7 +1564,9 @@ $('#st-empty').addEventListener('click', async () => {
 // Every season and episode of the shows recorded (the phone page's saved lists); a minute at a time.
 let catalogAt = 0;
 async function loadCatalog() {
-  if (Date.now() - catalogAt < 60_000) return;
+  // Every few seconds while a show's episodes are being looked up, so they show as they're found.
+  const looking = Object.values(state.catalog).some((show) => show.looking);
+  if (Date.now() - catalogAt < (looking ? 4_000 : 60_000)) return;
   catalogAt = Date.now();
   try {
     const catalog = await (await fetch('/api/catalog', { cache: 'no-store' })).json();

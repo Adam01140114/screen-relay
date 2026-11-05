@@ -929,19 +929,67 @@ function showCatalog() {
     }
   }
   const out = {};
+  const needed = [];
   for (const title of new Set(readLibrary(opts.dir).filter((it) => it.kind === 'tv').map((it) => it.title))) {
-    const show = shows[pages.get(normTitle(title))];
+    const url = pages.get(normTitle(title));
+    const show = shows[url];
     if (!show) continue;
     const episodes = {};
     for (const [season, list] of Object.entries(show.episodes ?? {})) {
       // "Season 1 · Episode 3: Name" -> [3, "Name"]
       episodes[season] = (list ?? []).map(([n, label]) => [n, String(label ?? '').split(':').slice(1).join(':').trim()]);
     }
-    out[title] = { seasons: (show.seasons ?? []).map(([n]) => n).filter((n) => Number.isFinite(n)), episodes,
-      poster: showPosters(readLibrary(opts.dir))(title) };
+    const seasons = (show.seasons ?? []).map(([n]) => n).filter((n) => Number.isFinite(n));
+    if (needsLookup(show)) needed.push(url);
+    const lookup = lookups.state.get(url);
+    out[title] = { seasons, episodes, poster: showPosters(readLibrary(opts.dir))(title),
+      looking: needed.includes(url) && !lookup?.failed, lookupFailed: Boolean(lookup?.failed) };
   }
+  lookUpEpisodes(needed);
   return out;
 }
+
+// Episode lookups: a season whose episodes aren't all known (none saved yet, or a list saved
+// while playing, which stops at the page's "Show more") is read from the site straight away by
+// site-search's lookup_episodes.py, in the VCR's hidden Chrome, one show at a time. The latest
+// season is read again once a day, for its new episodes. A show it couldn't read is tried again
+// 10 minutes later.
+const LOOKUP_SCRIPT = path.join(os.homedir(), 'Desktop', 'site-search', 'lookup_episodes.py');
+const PYTHON = ['/Library/Frameworks/Python.framework/Versions/3.14/bin/python3', '/opt/homebrew/bin/python3']
+  .find((p) => fs.existsSync(p)) ?? 'python3';
+const lookups = { running: null, state: new Map() }; // show url -> {at, failed}
+function needsLookup(show) {
+  const seasons = (show.seasons ?? []).map(([n]) => n).filter((n) => Number.isFinite(n));
+  if (!seasons.length) return true;
+  const whole = show.whole ?? {};
+  const latest = Math.max(...seasons);
+  return seasons.some((n) => !whole[n]) || Date.now() / 1000 - whole[latest] > 24 * 3600;
+}
+function lookUpEpisodes(urls) {
+  if (lookups.running || !fs.existsSync(LOOKUP_SCRIPT)) return;
+  const url = urls.find((u) => {
+    const last = lookups.state.get(u);
+    return !last || Date.now() - last.at > 10 * 60_000;
+  });
+  if (!url) return;
+  lookups.running = url;
+  lookups.state.set(url, { at: Date.now(), failed: lookups.state.get(url)?.failed ?? false });
+  console.log(`Looking up the episodes of ${url}`);
+  const proc = spawn(PYTHON, [LOOKUP_SCRIPT, url], { cwd: path.dirname(LOOKUP_SCRIPT), stdio: ['ignore', 'pipe', 'pipe'] });
+  let said = '';
+  proc.stdout.on('data', (d) => { said += d; });
+  proc.stderr.on('data', (d) => { said += d; });
+  const timer = setTimeout(() => proc.kill(), 10 * 60_000);
+  proc.on('close', (code) => {
+    clearTimeout(timer);
+    lookups.running = null;
+    lookups.state.set(url, { at: Date.now(), failed: code !== 0 });
+    console.log(`Episode lookup ${code === 0 ? 'done' : 'failed'} for ${url}: ${said.trim().split('\n').slice(-3).join(' / ')}`);
+    showCatalog(); // the next show that needs it
+  });
+}
+setInterval(() => { try { showCatalog(); } catch {} }, 5 * 60_000).unref?.();
+setTimeout(() => { try { showCatalog(); } catch {} }, 15_000).unref?.();
 
 // Request (an episode not recorded yet): the VCR plays it in a room of its own, recorded as usual.
 async function requestEpisode(req, res) {
