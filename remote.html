@@ -403,7 +403,7 @@
   html.simple #watch-sound { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z'/%3E%3C/svg%3E"); }
   html.simple #watch-fs { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z'/%3E%3C/svg%3E"); }
   html.simple #watch-cc { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1z'/%3E%3C/svg%3E"); }
-  html.simple #watch-cc.cc-on { color: #e50914; }
+  html.simple #watch-cc.cc-on, #wp-cc.cc-on { color: #e50914; }
   html.simple #watch-end { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4 14H8V8h8v8z'/%3E%3C/svg%3E"); }
   html.simple #watch-tv { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z'/%3E%3C/svg%3E"); }
 
@@ -523,6 +523,15 @@
   .rq-del { padding: 6px 10px; border: 0; border-radius: 6px; background: rgba(229, 9, 20, .14); color: #ff4a52; font-size: 12px; font-weight: 700; }
   .rq-del-show { justify-self: center; margin-top: 6px; }
   .rq-when { font-size: 12px; color: var(--muted); }
+  /* A room's progress bar: grab it to jump back or ahead. */
+  .rq-bar { position: relative; height: 22px; display: flex; align-items: center; touch-action: none; cursor: pointer; margin-top: 2px; }
+  .rq-track { position: relative; flex: 1; height: 4px; border-radius: 2px; background: #4d4d4d; }
+  .rq-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: #e50914; }
+  .rq-thumb { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #e50914; }
+  .rq-bar.drag .rq-thumb { width: 20px; height: 20px; margin: -10px 0 0 -10px; }
+  .rq-tip { position: absolute; bottom: 22px; transform: translateX(-50%); padding: 2px 7px; border-radius: 5px; background: rgba(20,20,20,.95);
+    color: #fff; font: 600 12px ui-monospace, Menlo, monospace; white-space: nowrap; pointer-events: none; }
+  .rq-tip[hidden] { display: none; }
   .rq-when.done { color: #46d369; }
   .rq-filter { display: flex; gap: 6px; margin: 2px 0 4px; }
   .rq-filter button { padding: 6px 12px; border: 0; border-radius: 999px; background: #2a2a2a; color: #ccc; font-size: 13px; font-weight: 600; }
@@ -544,6 +553,10 @@
   .rq-actions { display: grid; gap: 6px; }
   .rq-actions button { padding: 9px 14px; font-weight: 700; border: 0; border-radius: 6px; }
   .rq-actions .rq-watch { background: #fff; color: #000; }
+  .rq-actions .rq-over { background: #2a2a2a; color: #fff; font-size: 13px; padding: 6px 10px; }
+  .rq-replay { padding: 6px 10px; border: 0; border-radius: 6px; background: #fff; color: #000; font-size: 12px; font-weight: 700; }
+  .rq-ep-acts { grid-column: 2; grid-row: 1 / span 3; display: grid; gap: 6px; align-self: center; }
+  .rq-ep .rq-ep-acts .rq-del { grid-column: auto; grid-row: auto; }
   .rq-actions .rq-play { display: flex; align-items: center; justify-content: center; gap: 4px; background: #2a2a2a; color: #fff; }
   .rq-actions .rq-play svg { width: 16px; height: 16px; fill: currentColor; }
   .rq-actions .rq-end { background: rgba(229, 9, 20, .16); color: #ff4a52; font-size: 13px; padding: 6px 10px; }
@@ -664,6 +677,7 @@
             <span class="wp-spacer"></span>
             <button id="wp-prev" class="needs-state" aria-label="Previous episode" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
             <button id="wp-next" class="needs-state" aria-label="Next episode" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+            <button id="wp-cc" class="needs-state" aria-label="Subtitles" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1z"/></svg></button>
             <button id="wp-fs" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></button>
           </div>
         </div>
@@ -1213,20 +1227,23 @@
   // The list below shows every room playing on the Mac, refreshed every few seconds.
   const RQ_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let rqRooms = [], rqAt = 0, rqTimer = null;
+  async function freeRoom() {
+    const taken = new Set(rqRooms.map(r => r.room));
+    try {
+      for (let i = 0; i < 8; i++) {
+        const c = Array.from({ length: 4 }, () => RQ_CHARS[Math.floor(Math.random() * RQ_CHARS.length)]).join("");
+        if (taken.has(c)) continue;
+        const st = (await api("/room-status?room=" + c)).body;
+        if (st && !st.busy) return c;
+      }
+    } catch (e) {}
+    return null;
+  }
   async function requestPlay() {
     if (!$("title").value.trim() || !$("url").value.trim()) return;
     $("runcmd").disabled = true;
     $("runcmd").textContent = "Finding a room…";
-    let code = null;
-    try {
-      const taken = new Set(rqRooms.map(r => r.room));
-      for (let i = 0; i < 8 && !code; i++) {
-        const c = Array.from({ length: 4 }, () => RQ_CHARS[Math.floor(Math.random() * RQ_CHARS.length)]).join("");
-        if (taken.has(c)) continue;
-        const st = (await api("/room-status?room=" + c)).body;
-        if (st && !st.busy) code = c;
-      }
-    } catch (e) {}
+    const code = await freeRoom();
     $("runcmd").disabled = false;
     $("runcmd").textContent = RUN_LABEL;
     if (!code) { alert("Can't reach your Mac."); return; }
@@ -1245,7 +1262,9 @@
     drawRooms();
     rqTimer = setTimeout(refreshRooms, document.hidden ? 15000 : 3000);
   }
+  let rqDragging = false;  // a progress bar is being dragged: the list isn't redrawn under the finger
   function drawRooms() {
+    if (rqDragging) return;
     $("rq-count").hidden = !rqRooms.length;
     $("rq-count").textContent = rqRooms.length;
     if (!rqRooms.length) {
@@ -1268,22 +1287,90 @@
           <span class="rq-title">${escapeHtml(showTitle(r.title || (r.loading && r.loading.title)) || "Starting…")}</span>
           ${ep ? `<span class="rq-sub">${escapeHtml(ep)}</span>` : ""}
           <span class="rq-state ${pb && !pb.paused ? "live" : pb ? "" : "loading"}">${escapeHtml(state)}</span>
-          ${pb && pb.duration ? `<span class="recent-bar"><span style="width:${(100 * t / pb.duration).toFixed(1)}%"></span></span>` : ""}
+          ${pb && pb.duration ? `<div class="rq-bar" data-room="${escapeHtml(r.room)}" data-dur="${pb.duration}" role="slider" aria-label="Where in the show">
+            <div class="rq-track"><div class="rq-fill" style="width:${(100 * t / pb.duration).toFixed(2)}%"></div>
+              <div class="rq-thumb" style="left:${(100 * t / pb.duration).toFixed(2)}%"></div></div>
+            <span class="rq-tip" hidden></span></div>` : ""}
         </div>
         <div class="rq-actions">
           ${pb ? `<button class="rq-play" data-room="${escapeHtml(r.room)}" data-act="${pb.paused ? "play" : "pause"}">${pb.paused
               ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Play`
               : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>Pause`}</button>` : ""}
           <button class="rq-watch" data-link="${escapeHtml(link || "")}">Watch</button>
+          ${pb ? `<button class="rq-over" data-room="${escapeHtml(r.room)}">Start over</button>` : ""}
           <button class="rq-end" data-room="${escapeHtml(r.room)}">End</button>
         </div>
       </div>`;
     }).join("");
   }
+  // Each room's progress bar: press or drag to a spot (the time shows above it), let go to jump
+  // there. The Mac does the jump, and the watch log records it.
+  (() => {
+    let bar = null;
+    const at = e => {
+      const r = bar.querySelector(".rq-track").getBoundingClientRect();
+      const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      return { f, t: f * +bar.dataset.dur };
+    };
+    const show = e => {
+      const { f, t } = at(e);
+      bar.querySelector(".rq-fill").style.width = f * 100 + "%";
+      bar.querySelector(".rq-thumb").style.left = f * 100 + "%";
+      const tip = bar.querySelector(".rq-tip");
+      tip.textContent = clock(t);
+      tip.style.left = f * 100 + "%";
+      tip.hidden = false;
+    };
+    $("rq-list").addEventListener("pointerdown", e => {
+      const b = e.target.closest(".rq-bar");
+      if (!b) return;
+      bar = b;
+      rqDragging = true;
+      bar.classList.add("drag");
+      bar.setPointerCapture(e.pointerId);
+      show(e);
+      e.preventDefault();
+    });
+    $("rq-list").addEventListener("pointermove", e => { if (bar) show(e); });
+    const finish = async (e, cancel) => {
+      if (!bar) return;
+      const { t } = at(e), room = bar.dataset.room;
+      bar = null;
+      rqDragging = false;
+      const r = rqRooms.find(x => x.room === room);
+      if (cancel || !r || !r.playback) { drawRooms(); return; }
+      const to = Math.max(0, Math.min(t, (r.playback.duration || t) - 1));
+      r.playback.time = to;  // shown straight away
+      rqAt = Date.now();
+      drawRooms();
+      try {
+        const res = await api("/control", { room, action: "seek", time: to });
+        if (!res.ok) throw new Error(res.body.error || "Couldn't reach that room's video.");
+      } catch (err) {
+        alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
+      }
+      setTimeout(refreshRooms, 1500);
+    };
+    $("rq-list").addEventListener("pointerup", e => finish(e));
+    $("rq-list").addEventListener("pointercancel", e => finish(e, true));
+  })();
   if (REQUESTS) {
     setInterval(() => { if (rqRooms.some(r => r.playback && !r.playback.paused)) drawRooms(); }, 1000);
     $("rq-list").addEventListener("click", async e => {
       const watch = e.target.closest(".rq-watch"), end = e.target.closest(".rq-end"), play = e.target.closest(".rq-play");
+      const over = e.target.closest(".rq-over");
+      if (over) {  // back to the beginning of what's playing there
+        const r = rqRooms.find(x => x.room === over.dataset.room);
+        if (r && r.playback) { r.playback.time = 0; rqAt = Date.now(); drawRooms(); }
+        try {
+          const res = await api("/control", { room: over.dataset.room, action: "seek", time: 0 });
+          if (!res.ok) throw new Error(res.body.error || "Couldn't reach that room's video.");
+        } catch (err) {
+          alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
+        }
+        setTimeout(refreshRooms, 1500);
+        return;
+      }
       if (play) {  // Play or Pause that room: shown straight away, then done by the Mac
         const r = rqRooms.find(x => x.room === play.dataset.room), act = play.dataset.act;
         if (r && r.playback) {
@@ -1369,7 +1456,10 @@
           const state = ep.finished ? `✓ Watched to the end · ${at(ep.ended.date, ep.ended.time)}`
             : `Started ${at(ep.date, ep.time)}` + (ep.position ? ` · stopped around ${ep.position}` : " · didn't finish");
           return `<div class="rq-ep">
-            <button class="rq-del" data-ids="${escapeHtml(JSON.stringify([ep.id]))}" data-what="${escapeHtml(name)}" aria-label="Delete ${escapeHtml(name)}">Delete</button>
+            <span class="rq-ep-acts">
+              <button class="rq-replay" data-title="${escapeHtml(ep.content || sh.content || "")}" data-season="${ep.season || ""}" data-episode="${ep.episode || ""}">▶ Play from start</button>
+              <button class="rq-del" data-ids="${escapeHtml(JSON.stringify([ep.id]))}" data-what="${escapeHtml(name)}" aria-label="Delete ${escapeHtml(name)}">Delete</button>
+            </span>
             <span class="rq-ep-title">${escapeHtml(name)}</span>
             <span class="rq-when${ep.finished ? " done" : ""}">${escapeHtml(state)} · Room ${escapeHtml(ep.room || "")}</span>
             ${ep.watched != null ? `<span class="rq-took">Took ${took(ep.watched)} (not counting pauses)</span>` : ""}
@@ -1383,6 +1473,28 @@
   }
   // Delete: an episode, or a show with all its episodes (as the filter shows them), out of the
   // watch log and its copies for good.
+  // Play from start: that episode (or movie) again from the beginning, in a room of its own.
+  $("rq-done-list").addEventListener("click", async e => {
+    const btn = e.target.closest(".rq-replay");
+    if (!btn) return;
+    e.preventDefault();
+    btn.disabled = true;
+    btn.textContent = "Starting…";
+    const room = await freeRoom();
+    try {
+      if (!room) throw new Error("Failed to fetch");
+      const res = await api("/replay", { title: btn.dataset.title, room,
+        season: +btn.dataset.season || null, episode: +btn.dataset.episode || null });
+      if (!res.ok) throw new Error(res.body.error || "Couldn't start it.");
+      btn.textContent = "Started in room " + room;
+      $("rq").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
+      btn.textContent = "▶ Play from start";
+    }
+    btn.disabled = false;
+    refreshRooms();
+  });
   $("rq-done-list").addEventListener("click", async e => {
     const btn = e.target.closest(".rq-del");
     if (!btn) return;
@@ -1938,8 +2050,10 @@
   let ccState = null, ccAskedAt = 0, ccPicked = null;
   function showCaptions(cc) {
     ccState = cc || null;
-    $("watch-cc").hidden = !(cc && cc.available);
-    $("watch-cc").classList.toggle("cc-on", !!(cc && cc.items && cc.items.some((x, i) => i > 0 && x.on)));
+    const on = !!(cc && cc.items && cc.items.some((x, i) => i > 0 && x.on));
+    $("watch-cc").hidden = $("wp-cc").hidden = !(cc && cc.available);
+    $("watch-cc").classList.toggle("cc-on", on);
+    $("wp-cc").classList.toggle("cc-on", on);
     if ($("cc-dialog").open) drawCaptions();
   }
   function drawCaptions() {
@@ -1955,7 +2069,10 @@
       <span class="pick-row-title">${i === on ? "✓ " : ""}${escapeHtml(x.label)}</span>
       ${x.note ? `<span class="pick-row-sub">${escapeHtml(x.note)}</span>` : ""}</button>`).join("");
   }
+  $("wp-cc").addEventListener("click", e => { e.stopPropagation(); wpShow(); $("watch-cc").click(); });
   $("watch-cc").addEventListener("click", () => {
+    // In the Watch Stream player's real fullscreen the list couldn't show: leave fullscreen first.
+    if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
     ccAskedAt = Date.now();
     sendControl("captions-list");
     drawCaptions();
