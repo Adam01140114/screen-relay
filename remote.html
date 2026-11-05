@@ -338,6 +338,136 @@
   .watch-frame:fullscreen .wp-top, .watch-frame.wp-full .wp-top { padding: max(14px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-left)); }
   .watch-frame:fullscreen .wp-bot, .watch-frame.wp-full .wp-bot { padding: 0 max(18px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); }
   .watch-frame:fullscreen .wp-time, .watch-frame.wp-full .wp-time { font-size: 14px; }
+  /* ===== The phone (html.simple): a dark, Netflix-style look ===== */
+  html.simple {
+    --bg: #141414; --card: #141414; --text: #fff; --muted: #a3a3a3; --border: #333;
+    --accent: #e50914; --accent-text: #fff; --code-bg: #222; --ok: #46d369; --bad: #ff4a52;
+    --warn-bg: #2b2414; --warn-text: #f3d68a; --field: #2a2a2a;
+    color-scheme: dark;
+  }
+  html.simple body { background: #141414; padding: 0 0 max(24px, env(safe-area-inset-bottom)); font-size: 15px;
+    -webkit-tap-highlight-color: transparent; }
+  html.simple main#builder { position: relative; max-width: 640px; border: 0; border-radius: 0; background: none; margin: 0 auto;
+    padding: max(14px, env(safe-area-inset-top)) 16px 8px; }
+  /* Header: a red wordmark on the left, the room code as a small pill on the right. */
+  html.simple h1 { margin: 2px 0 18px; font-size: 0; line-height: 40px; }
+  html.simple h1::before { content: "WATCH"; font: 900 30px/40px -apple-system, "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: -0.02em; color: #e50914; transform: scaleY(1.12); display: inline-block; }
+  html.simple #share-row { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 16px; display: flex; align-items: center;
+    height: 40px; margin: 0; }
+  html.simple #share-row > div:first-child { display: flex; align-items: center; gap: 6px; padding: 0 4px 0 12px; border-radius: 999px;
+    background: var(--field); }
+  html.simple #share-row label { margin: 0; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  html.simple #room { width: 64px; padding: 7px 4px; border: 0; background: none; font-weight: 700; text-align: center; }
+  html.simple #room:focus { outline: none; }
+  html.simple #share-row > div:first-child:focus-within { box-shadow: 0 0 0 2px #fff; }
+  html.simple .remote-status { margin: -10px 0 10px; }
+  /* Search: one big bar with a magnifier; the site under it, smaller. */
+  html.simple label[for=title] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  html.simple input[type=text], html.simple input[type=number], html.simple select {
+    background-color: var(--field); border: 1px solid transparent; border-radius: 6px; color: #fff; }
+  html.simple input::placeholder { color: #8c8c8c; }
+  html.simple input[type=text]:focus, html.simple select:focus { outline: none; border-color: #fff; }
+  html.simple #title { padding: 14px 14px 14px 46px; font-size: 17px; font-weight: 500;
+    background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23bbb' d='M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E") 13px center / 22px no-repeat; }
+  html.simple label[for=url] { margin: 12px 0 5px; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  html.simple #url { padding: 10px 12px; font-size: 14px; color: #ccc; }
+  html.simple #runcmd { margin-top: 16px; padding: 13px; border: 0; border-radius: 6px; font-size: 17px; font-weight: 700;
+    background: #e50914; color: #fff; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  html.simple #runcmd:not(:disabled):active { background: #b20710; }
+  html.simple #runcmd:disabled { opacity: 1; background: #3a3a3a; color: #8c8c8c; }
+  html.simple button { border-radius: 6px; }
+  html.simple button:active:not(:disabled) { transform: scale(0.97); }
+  html.simple .hint { color: var(--muted); }
+
+  /* Icons for the phone's buttons (a mask, so a button's own text can change freely). */
+  html.simple .ic::before, html.simple #runcmd::before, html.simple .recent-actions .primary::before {
+    content: ""; width: 22px; height: 22px; flex: none; background: currentColor;
+    -webkit-mask: var(--ic) center / contain no-repeat; mask: var(--ic) center / contain no-repeat; }
+  html.simple #runcmd, html.simple #watch-here, html.simple .recent-actions .primary {
+    --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 4v16l13-8z'/%3E%3C/svg%3E"); }
+  html.simple #watch-sound { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z'/%3E%3C/svg%3E"); }
+  html.simple #watch-fs { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z'/%3E%3C/svg%3E"); }
+  html.simple #watch-end { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4 14H8V8h8v8z'/%3E%3C/svg%3E"); }
+  html.simple #watch-tv { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z'/%3E%3C/svg%3E"); }
+
+  /* The live screen: edge to edge, like the top of a title page. */
+  html.simple .watch { margin-top: 22px; border: 0; padding: 0; gap: 14px; }
+  html.simple .watch-head { order: -1; }
+  html.simple .watch-state { padding: 4px 10px 4px 8px; border-radius: 4px; background: #262626; color: #ccc; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .05em; }
+  html.simple .watch-state[data-state="live"] { background: #e50914; color: #fff; }
+  html.simple .watch-state[data-state="live"] .dot { background: #fff; }
+  html.simple .watch-frame { margin: 0 -16px; border-radius: 0; }
+  /* Order on the phone: picture, Watch Stream and its buttons, then the episode picker, volume
+     and the TV links. */
+  html.simple .watch-buttons { order: 1; } html.simple .tv-playback { order: 2; } html.simple .now-playing { order: 3; }
+  html.simple .tv-volume { order: 4; } html.simple #watch-tv { order: 5; } html.simple .watch-share { order: 6; }
+  html.simple .watch-frame.wp-full { margin: 0; }
+  html.simple #np-title { font-size: 22px; font-weight: 800; line-height: 1.2; }
+  /* Watch Stream: the big white Play button; then sound, TV fullscreen and End Stream as icons
+     with a label under each. */
+  html.simple .watch-buttons { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  html.simple .watch-buttons button { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 2px;
+    border: 0; background: none; color: #fff; font-size: 12px; font-weight: 600; white-space: normal; line-height: 1.2; }
+  html.simple .watch-buttons button::before { width: 26px; height: 26px; }
+  html.simple .watch-buttons .end-stream { grid-column: auto; color: var(--bad); }
+  html.simple #watch-here { order: -1; grid-column: 1 / -1; flex-direction: row; justify-content: center; gap: 8px; padding: 12px;
+    background: #fff; color: #000; font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  html.simple #watch-here::before { width: 24px; height: 24px; }
+  html.simple #watch-here:active { background: #d6d6d6; }
+  /* The player on the picture does play, pause and jumping now, so the old row of those hides
+     while it's working (its notices still show). */
+  html.simple .watch:has(#wp:not([hidden]):not(.no-state)) :is(.tv-playback-row, #tv-progress, .tv-skip-row) { display: none; }
+  html.simple .tv-playback-row button, html.simple .tv-skip-row button { background: #2a2a2a; border: 0; color: #fff; }
+  html.simple .tv-playback-row button.primary { background: #fff; color: #000; }
+  html.simple .tv-volume label, html.simple .now-playing label { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  html.simple .tv-range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; }
+  html.simple .tv-range::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9px; border: 0; background: #e50914; }
+  html.simple .tv-volume-num input { background: var(--field); border: 0; color: #fff; }
+  html.simple .now-playing { border-top: 0; padding-top: 0; }
+  html.simple .now-playing select { padding: 11px 12px; font-weight: 600; border-radius: 4px; background-color: #2a2a2a; }
+  html.simple #watch-tv { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border: 0;
+    background: #2a2a2a; color: #fff; }
+  html.simple #watch-tv[hidden] { display: none; }
+  html.simple .watch-share, html.simple .watch-lan { border-color: #2a2a2a; }
+  html.simple .watch-share button { background: #2a2a2a; border: 0; color: #fff; }
+  html.simple .tv-link { background: #1f1f1f; border-color: #333; color: #fff; }
+
+  /* Continue Watching: dark rows with a red progress bar and a white Play button. */
+  html.simple .recent { margin-top: 26px; border: 0; padding: 0; }
+  html.simple .recent h2 { font-size: 20px; font-weight: 800; }
+  html.simple .recent-list { gap: 8px; }
+  html.simple .recent-item { padding: 10px; border: 0; border-radius: 6px; background: #1f1f1f; }
+  html.simple .recent-main { grid-template-columns: 68px 1fr; }
+  html.simple .recent-thumb { width: 68px; border: 0; border-radius: 4px; background: #2a2a2a; }
+  html.simple .recent-title { font-size: 16px; font-weight: 700; }
+  html.simple .recent-bar { height: 3px; background: #4d4d4d; border-radius: 0; margin-top: 6px; }
+  html.simple .recent-bar span { background: #e50914; }
+  html.simple .recent-live { color: #ff4a52; }
+  html.simple .recent-actions .primary { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 9px 14px 9px 10px;
+    background: #fff; color: #000; border: 0; font-weight: 700; }
+  html.simple .recent-actions .primary::before { width: 18px; height: 18px; }
+  html.simple .recent-actions .end-stream { border: 0; background: rgba(229, 9, 20, .16); color: #ff4a52; }
+  html.simple .recent-stars { margin-left: 80px; }
+  html.simple .recent-stars button { color: #4d4d4d; }
+  html.simple .recent-stars button.on { color: #fff; }
+  html.simple #recent-more, html.simple #recent-export { background: #2a2a2a; border: 0; color: #fff; }
+
+  /* Dialogs and the "Which one?" posters. */
+  html.simple dialog { background: #181818; border: 0; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+  html.simple dialog::backdrop { background: rgba(0, 0, 0, .75); }
+  html.simple dialog button:not(.primary):not(.pick-card):not(.pick-row) { background: #2a2a2a; border: 0; color: #fff; }
+  html.simple .pick-poster { border: 0; border-radius: 4px; }
+  html.simple .pick-row { background: #232323; border: 0; }
+  html.simple .pick-section { border-color: #333; }
+  html.simple .pass-input { background: var(--field); border: 0; color: #fff; }
+
+  /* The player on the picture, a little bigger on the phone. */
+  html.simple .wp-mid { gap: 34px; }
+  html.simple .wp-mid button { width: 40px; height: 40px; }
+  html.simple .wp-mid .wp-big { width: 60px; height: 60px; }
+  html.simple .wp-shade { background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.25) 35%, rgba(0,0,0,.25) 65%, rgba(0,0,0,.7)); }
 </style>
 </head>
 <body>
@@ -359,7 +489,7 @@
   <div class="hint adv" id="share-hint">On the TV, open the relay page with <code>#tv=</code> and the room code on the end so it always uses that code.</div>
 
   <label for="title">Title</label>
-  <input type="text" id="title" placeholder="e.g. The Bear" autofocus>
+  <input type="text" id="title" placeholder="Search shows and movies" autofocus>
 
   <label class="adv">Type</label>
   <div class="seg adv">
@@ -445,10 +575,10 @@
       </div>
     </div>
     <div class="watch-buttons">
-      <button id="watch-sound">Turn on sound</button>
-      <button id="watch-fs" class="primary" title="Fullscreen on the TV (the Mac's page)">Fullscreen</button>
-      <button id="watch-here" class="primary watch-wide">Watch Stream</button>
-      <button id="watch-end" class="end-stream">End Stream</button>
+      <button id="watch-sound" class="ic">Turn on sound</button>
+      <button id="watch-fs" class="primary ic" title="Fullscreen on the TV (the Mac's page)">Fullscreen</button>
+      <button id="watch-here" class="primary watch-wide ic">Watch Stream</button>
+      <button id="watch-end" class="end-stream ic">End Stream</button>
     </div>
     <div class="tv-playback" id="tv-playback">
       <div class="tv-playback-row">
@@ -489,7 +619,7 @@
       </div>
       <p class="hint" id="np-status">Change either one to switch to it.</p>
     </div>
-    <button id="watch-tv" class="wide watch-tv-btn">Watch On TV</button>
+    <button id="watch-tv" class="wide watch-tv-btn ic">Watch On TV</button>
     <div class="watch-share" id="watch-share" hidden>
       <span class="watch-share-label">Watch together</span>
       <p class="hint">Open this on another phone to watch the same thing, from anywhere.</p>
@@ -507,8 +637,8 @@
     </div>
   </section>
 
-  <section class="recent" id="recent" hidden aria-label="Recent Activity">
-    <h2>Recent Activity</h2>
+  <section class="recent" id="recent" hidden aria-label="Continue Watching">
+    <h2>Continue Watching</h2>
     <p class="hint" id="recent-hint">Pick up where you left off. It plays in room <span id="recent-room">1234</span>.</p>
     <div class="recent-list" id="recent-list"></div>
     <button id="recent-more" class="wide recent-more" hidden>Show more</button>
@@ -833,6 +963,8 @@
   $("copy").addEventListener("click", () => copyText($("out").textContent, $("copy"), "Copy command"));
 
   /* ---------- Run command ---------- */
+  const RUN_LABEL = document.documentElement.classList.contains("simple") ? "Play" : "Run command";
+  $("runcmd").textContent = RUN_LABEL;
   // Run works when this page is served by builder-server.py (http://localhost:8766/), which
   // starts search.py with these exact arguments. The pop-up shows the link to open on the TV:
   // "Any network" is Screen Relay on Render; "Same Wi-Fi" is the copy on this Mac.
@@ -944,7 +1076,7 @@
         waitForChoices(body.pid);
         if (!resume) {
           $("runcmd").textContent = "Started!";
-          setTimeout(() => $("runcmd").textContent = "Run command", 1500);
+          setTimeout(() => $("runcmd").textContent = RUN_LABEL, 1500);
         }
         if (currentRoom) watchRoom(currentRoom, body.publicRelay, body.relayRunning ? body.lanRelay : null);
       }
@@ -1741,6 +1873,7 @@
   // What was watched lately (the helper's history.json, newest first), each with where it was
   // left: tap to play it again from there in this page's room, through the same Run as above.
   let recentItems = [], recentShown = "", recentTimer = null, recentAll = false;
+  let exportText = null, exportCounts = "", exportAt = 0;  // Export Preferences, fetched ahead (see loadExport)
   const RECENT_FIRST = 5;  // shown at first; "Show more" lists everything ever watched
   const minutesLeft = s => s >= 3600 ? `${Math.floor(s / 3600)} hr ${Math.round(s % 3600 / 60)} min left` : `${Math.max(1, Math.round(s / 60))} min left`;
   function ago(at) {
@@ -1824,6 +1957,7 @@
         if (res.ok && Array.isArray(res.body.items)) recentItems = res.body.items;
       } catch (e) {}
       renderRecent();
+      if (recentItems.length && Date.now() - exportAt > 30000) loadExport().catch(() => {});
     }
     recentTimer = setTimeout(refreshRecent, document.hidden ? 60000 : 10000);
   }
@@ -1892,18 +2026,53 @@ How to help me:
 5. If I tell you I've seen something or how I felt about it, remember it for the rest of the conversation.
 
 My viewing history:`;
+  // An iPhone only lets a page copy during the tap itself, not after waiting for the Mac, so the
+  // export is fetched ahead of time and copied straight away when the button is pressed.
+  async function loadExport() {
+    const res = await api("/preferences");
+    if (!res.ok) throw new Error(res.body.error || "Couldn't get your ratings.");
+    const data = res.body;
+    exportText = data.rated.length || data.watched_not_rated.length ? RECOMMENDER_PROMPT + "\n\n" + JSON.stringify(data, null, 2) : "";
+    exportCounts = `${data.rated.length} rated + ${data.watched_not_rated.length} watched`;
+    exportAt = Date.now();
+  }
+  function copyInTap(text) {
+    const t = document.createElement("textarea");
+    t.value = text;
+    t.setAttribute("readonly", "");
+    t.style.cssText = "position:absolute;left:-9999px;top:" + window.scrollY + "px;font-size:12pt;border:0;padding:0;margin:0";
+    document.body.appendChild(t);
+    t.select();
+    t.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) {}
+    t.remove();
+    window.getSelection().removeAllRanges();
+    if (ok) return Promise.resolve();
+    return navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject(new Error("no clipboard"));
+  }
   $("recent-export").addEventListener("click", async () => {
     const btn = $("recent-export");
-    btn.disabled = true;
-    try {
-      const res = await api("/preferences");
-      if (!res.ok) throw new Error(res.body.error || "Couldn't get your ratings.");
-      const data = res.body;
-      if (!data.rated.length && !data.watched_not_rated.length) throw new Error("Nothing rated or watched yet.");
-      const done = `Copied ${data.rated.length} rated + ${data.watched_not_rated.length} watched. Paste into ChatGPT`;
-      await copyText(RECOMMENDER_PROMPT + "\n\n" + JSON.stringify(data, null, 2), btn, done);
+    if (exportText === "") { alert("Nothing rated or watched yet."); return; }
+    if (exportText) {
+      try {
+        await copyInTap(exportText);
+        btn.textContent = `Copied ${exportCounts}. Paste into ChatGPT`;
+      } catch (e) {
+        btn.textContent = "Couldn't copy. Tap again";
+      }
       setTimeout(() => { btn.textContent = "Export Preferences"; }, 6000);
+      if (Date.now() - exportAt > 30000) loadExport().catch(() => {});  // fresh for next time
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "Getting your ratings…";
+    try {
+      await loadExport();
+      btn.textContent = exportText ? "Ready: tap again to copy" : "Export Preferences";
+      if (!exportText) alert("Nothing rated or watched yet.");
     } catch (e) {
+      btn.textContent = "Export Preferences";
       alert(e.message === "Failed to fetch" ? "Can't reach your Mac." : e.message);
     } finally {
       btn.disabled = false;

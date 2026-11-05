@@ -672,19 +672,22 @@ function plRender() {
   player.classList.toggle("no-state", !p);
   player.classList.toggle("paused", pl.paused);
   player.classList.toggle("muted", tvVideo.muted);
-  if (pl.paused) player.classList.remove("idle");
 }
 setInterval(() => { if (!$("player").hidden && !pl.paused && !pl.dragging) plRender(); }, 250);
 
-// The bar shows on any movement or press, and fades after a few quiet seconds while playing.
+// The bar shows on any movement or press, and always fades after 3 quiet seconds: paused or
+// playing, and even with the cursor resting on it (only a drag on the progress bar keeps it up).
+const PL_IDLE_MS = 3000;
 function plWake() {
   const player = $("player");
   player.classList.remove("idle");
   clearTimeout(pl.idleTimer);
   pl.idleTimer = setTimeout(() => {
-    if (!pl.paused && !pl.dragging && !player.contains(document.activeElement)) player.classList.add("idle");
-    else plWake();
-  }, 3500);
+    if (pl.dragging) return plWake();
+    player.classList.add("idle");
+    $("plTip").hidden = true;
+    if (player.contains(document.activeElement)) document.activeElement.blur();
+  }, PL_IDLE_MS);
 }
 function plFlash(icon) {
   const el = $("plFlash");
@@ -750,7 +753,14 @@ $("player").addEventListener("click", (e) => {
   if (plIdleAtPress && e.clientY >= r.top) { plWake(); return; }
   plToggle();
 });
-$("player").addEventListener("pointermove", plWake);
+// Only real movement counts: Chrome also sends a "move" when the page changes under a cursor
+// that's sitting still (as the bar fading out does), which would bring the bar straight back.
+let plLastX = -1, plLastY = -1;
+$("player").addEventListener("pointermove", (e) => {
+  if (Math.abs(e.clientX - plLastX) < 3 && Math.abs(e.clientY - plLastY) < 3) return;
+  plLastX = e.clientX; plLastY = e.clientY;
+  plWake();
+});
 $("plPlay").onclick = plToggle;
 $("plBack").onclick = () => { plSeekBy(-SEEK_STEP); plWake(); };
 $("plFwd").onclick = () => { plSeekBy(SEEK_STEP); plWake(); };
@@ -1037,7 +1047,10 @@ $("roomSwitch").addEventListener("submit", (e) => {
 
 // Hide the cursor and buttons on the TV after a few seconds without movement.
 let idleTimer;
-$("tv").addEventListener("pointermove", () => {
+let tvLastX = -1, tvLastY = -1;
+$("tv").addEventListener("pointermove", (e) => {
+  if (Math.abs(e.clientX - tvLastX) < 3 && Math.abs(e.clientY - tvLastY) < 3) return;  // (see the player's)
+  tvLastX = e.clientX; tvLastY = e.clientY;
   $("tv").classList.remove("idle-cursor");
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => $("tv").classList.add("idle-cursor"), 3000);
