@@ -941,6 +941,9 @@ $("plCcMenu").addEventListener("click", (e) => {
 // passcode, if this browser has opened the remote link before).
 function remoteUrl() {
   const hash = "#remote&room=" + encodeURIComponent(tvCode || "");
+  // The public Tailscale link: the helper's own public door (port 10000), which asks for its code once.
+  if (location.protocol === "https:" && /\.ts\.net$/i.test(location.hostname))
+    return `https://${location.hostname}:10000/command-builder.html${hash}`;
   return location.protocol === "https:" ? new URL("remote.html", location.href).href + hash
     : `http://${location.hostname}:8766/command-builder.html${hash}`;
 }

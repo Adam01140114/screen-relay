@@ -933,7 +933,13 @@
   // to it. Served from Render (remote.html), they go to an agent on the Mac through
   // PeerJS: its address is made from the key in this page's link (#k=...) and the passcode,
   // so only someone with both can reach it. The agent only accepts a title, site and room.
-  const REMOTE = location.protocol !== "file:" && location.port !== "8766";
+  // The public Tailscale link (port 10000) is this Mac's helper too, so it talks to it directly.
+  // A copy opened next to the TV page there (/tv/remote.html) goes to that link instead.
+  const TAILNET_HOST = /\.ts\.net$/i.test(location.hostname);
+  if (TAILNET_HOST && location.protocol === "https:" && location.port !== "10000") {
+    location.replace(`https://${location.hostname}:10000/command-builder.html${location.hash}`);
+  }
+  const REMOTE = location.protocol !== "file:" && location.port !== "8766" && !TAILNET_HOST;
   let remotePeer = null, remoteConn = null, remoteReady = null, remoteRid = 0;
   const remoteWaiting = new Map();
 
@@ -2840,7 +2846,7 @@ My viewing history:`;
     try { st = (await api("/room-status?room=" + encodeURIComponent(room))).body; } catch (e) {}
     if (!st || !st.busy || watchRoomCode) return;
     if (!REMOTE) try { links = await (await fetch("/info", { cache: "no-store" })).json(); } catch (e) {}
-    watchRoom(room, links.publicRelay || "https://tvshare.onrender.com/", links.relayRunning ? links.lanRelay : null);
+    watchRoom(room, links.publicRelay || "https://platnms-mac-mini.tail7f705f.ts.net/tv/", links.relayRunning ? links.lanRelay : null);
   })();
 
   /* ---------- Logs ---------- */
