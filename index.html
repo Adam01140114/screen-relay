@@ -144,6 +144,17 @@
   #tv .pl-spacer { flex: 1; }
   #tv .player:not(.paused) .ic-play, #tv .player.paused .ic-pause, #tv .player:not(.muted) .ic-muted, #tv .player.muted .ic-sound { display: none; }
   #tv .player.no-state .needs-state { display: none; }
+  /* Remote: the phone page in a sidebar the height of the screen, scrolling on its own. */
+  #tv .pl-remote { width: auto; border-radius: 999px; display: flex; align-items: center; gap: 8px; padding: 7px 16px 7px 10px;
+    font: 600 clamp(0.95rem, 1.4vw, 1.25rem) var(--body); }
+  #tv .pl-remote svg { width: clamp(24px, 2.2vw, 36px); height: clamp(24px, 2.2vw, 36px); }
+  #tv .remote-panel { position: absolute; top: 0; right: 0; bottom: 0; z-index: 20; width: min(440px, 92vw); display: flex; flex-direction: column;
+    background: #141414; box-shadow: -12px 0 40px rgba(0,0,0,0.6); }
+  #tv .remote-panel[hidden] { display: none; }
+  #tv .remote-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 10px 18px; color: #fff;
+    font: 700 1.1rem var(--body); border-bottom: 1px solid #2a2a2a; }
+  #tv .remote-head button { width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: #2a2a2a; color: #fff; font-size: 1.1rem; }
+  #tv .remote-panel iframe { flex: 1; width: 100%; border: 0; background: #141414; }
   #tv .pl-flash { position: absolute; left: 50%; top: 50%; width: clamp(80px, 9vw, 130px); height: clamp(80px, 9vw, 130px); padding: clamp(18px, 2vw, 30px);
     border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; transform: translate(-50%, -50%); opacity: 0; pointer-events: none; }
   #tv .pl-flash svg { width: 100%; height: 100%; fill: currentColor; display: block; }
@@ -230,6 +241,7 @@
         <span class="pl-spacer"></span>
         <button class="pl-btn needs-state" id="plPrev" aria-label="Previous episode" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
         <button class="pl-btn needs-state" id="plNext" aria-label="Next episode" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+        <button class="pl-btn pl-remote" id="plRemote" aria-label="Remote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 9H9c-.55 0-1 .45-1 1v12c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V10c0-.55-.45-1-1-1zm-3 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM7.05 6.05l1.41 1.41C9.37 6.56 10.62 6 12 6s2.63.56 3.54 1.46l1.41-1.41C15.68 4.78 13.93 4 12 4s-3.68.78-4.95 2.05zM12 0C8.96 0 6.21 1.23 4.22 3.22l1.41 1.41C7.26 3.01 9.51 2 12 2s4.74 1.01 6.36 2.64l1.41-1.41C17.79 1.23 15.04 0 12 0z"/></svg><span>Remote</span></button>
         <button class="pl-btn" id="plFs" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></button>
       </div>
     </div>
@@ -239,8 +251,13 @@
   <div class="tv-status" id="tvStatus">Getting a code…</div>
   <div class="tv-controls" id="tvControls">
     <button id="soundBtn" class="sound" hidden>Turn on sound</button>
+    <button id="remoteBtn">Remote</button>
     <button id="fsBtn">Full screen</button>
   </div>
+  <aside class="remote-panel" id="remotePanel" hidden aria-label="Remote">
+    <div class="remote-head"><span>Remote</span><button id="remoteClose" aria-label="Close the remote">✕</button></div>
+    <iframe id="remoteFrame" title="Remote" allow="autoplay; clipboard-write"></iframe>
+  </aside>
 </div>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -835,6 +852,7 @@ $("player").addEventListener("pointerdown", (e) => {
 }, { capture: true });
 $("player").addEventListener("click", (e) => {
   if (e.target.closest(".pl-btn, .pl-progress")) return;
+  if (!$("remotePanel").hidden) { toggleRemote(false); return; }  // a tap beside the remote closes it
   const r = $("plBar").getBoundingClientRect();
   if (plIdleAtPress && e.clientY >= r.top) { plWake(); return; }
   plToggle();
@@ -854,6 +872,27 @@ $("plMute").onclick = () => { plMute(); plWake(); };
 $("plPrev").onclick = () => plEpisode(-1);
 $("plNext").onclick = () => plEpisode(1);
 $("plFs").onclick = toggleFullscreen;
+
+// Remote: the phone page (all its controls, for this TV's room) in a sidebar. On this Mac's
+// Wi-Fi link it's the builder's helper on port 8766 (it asks for the phone code once per TV);
+// on the internet link it's remote.html next to this page (it uses the remote link's key and
+// passcode, if this browser has opened the remote link before).
+function remoteUrl() {
+  const hash = "#remote&room=" + encodeURIComponent(tvCode || "");
+  return location.protocol === "https:" ? new URL("remote.html", location.href).href + hash
+    : `http://${location.hostname}:8766/command-builder.html${hash}`;
+}
+function toggleRemote(open = $("remotePanel").hidden) {
+  $("remotePanel").hidden = !open;
+  if (open) {
+    const url = remoteUrl();
+    if ($("remoteFrame").dataset.url !== url) { $("remoteFrame").dataset.url = url; $("remoteFrame").src = url; }
+    $("remoteFrame").focus();
+  } else if (!$("player").hidden) plWake();
+}
+$("plRemote").onclick = () => toggleRemote();
+$("remoteBtn").onclick = () => toggleRemote();
+$("remoteClose").onclick = () => toggleRemote(false);
 
 // The progress bar: press or drag to pick a spot (the time shows above it), let go to jump there.
 (() => {
@@ -899,6 +938,7 @@ $("plFs").onclick = toggleFullscreen;
 // jump 10 seconds, or move between the bar's buttons once one has focus; up and down move
 // between the progress bar and the buttons. Any press brings the bar back.
 window.addEventListener("keydown", (e) => {
+  if (!$("remotePanel").hidden) { if (e.key === "Escape") toggleRemote(false); return; }  // the remote has the keys
   if (!tvCall || tvVideo.hidden || $("player").hidden) return;
   const wasIdle = $("player").classList.contains("idle");
   plWake();

@@ -12,6 +12,9 @@
       || (location.protocol !== "file:" && location.port !== "8766")) document.documentElement.classList.add("simple");
   // The VCR page (#requests in the link): ask for shows, each plays in a room of its
   // own, several at once; below, everything playing, in which room, how far along, and Watch.
+  // The remote in the TV page's sidebar (#remote&room=CODE): the phone page's controls for that
+  // room, without playing the show here too (the TV is already showing it).
+  if (/(^|[#&])remote(&|$)/.test(location.hash)) document.documentElement.classList.add("simple", "embed");
   if (/(^|[#&])requests(&|$)/.test(location.hash)) {
     document.documentElement.classList.add("simple", "requests");
     document.title = "VCR";
@@ -481,6 +484,11 @@
   html.simple .wp-shade { background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.25) 35%, rgba(0,0,0,.25) 65%, rgba(0,0,0,.7)); }
   /* ===== VCR (html.requests) ===== */
   html.requests h1::before { content: "VCR"; }
+  /* The TV's Remote sidebar: no picture of its own, nor the phone-only buttons. */
+  html.embed body { padding-top: 0; }
+  html.embed h1::before { content: "REMOTE"; font-size: 24px; }
+  html.embed :is(.watch-head, .watch-frame, #watch-here, #watch-sound, .tv-volume, #watch-tv, .watch-share) { display: none !important; }
+  html.embed .watch-buttons { grid-template-columns: 1fr 1fr; }
   html.requests #share-row, html.requests #watch, html.requests #recent { display: none !important; }
   .rq { display: none; }
   html.requests .rq { display: grid; gap: 8px; }
@@ -825,11 +833,12 @@
   const q = s => "'" + s.replace(/'/g, "'\\''") + "'";
   const shq = s => /^[A-Za-z0-9_.,:=@%+\/-]+$/.test(s) ? s : q(s);   // only quote when needed
   const REQUESTS = document.documentElement.classList.contains("requests");  // the VCR page
+  const EMBED = document.documentElement.classList.contains("embed");  // the TV's Remote sidebar
   const store = {
     get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set: (k, v) => {
       // VCR picks a new room for every request: that mustn't change the phone page's room.
-      if ((k === "room" || k === "share") && REQUESTS) return;
+      if ((k === "room" || k === "share") && (REQUESTS || EMBED)) return;
       try { localStorage.setItem(k, v); } catch (e) {}
     },
     del: k => { try { localStorage.removeItem(k); } catch (e) {} },
@@ -1497,6 +1506,7 @@
   }
 
   function openWatchPeer() {
+    if (EMBED) return;  // the TV's Remote: the controls only (the TV shows the picture)
     watchTimer = null;
     if (!watchRoomCode) return;
     if (!window.Peer) { setWatch("idle", "Couldn't load the player. Check the internet connection."); return; }
@@ -1886,7 +1896,7 @@
   }
   // The first tap while a show is on starts the silent sound (and so the lock screen controls).
   const lockArm = () => {
-    if (lockArmed || !lockOn() || !document.documentElement.classList.contains("simple")) return;  // phones only
+    if (lockArmed || !lockOn() || !document.documentElement.classList.contains("simple") || EMBED) return;  // phones only
     lockArmed = true;
     if (!pb.paused) lockAudio.play().catch(() => { lockArmed = false; });
   };
@@ -2499,6 +2509,8 @@ My viewing history:`;
   $("phone-copy").addEventListener("click", () => phoneLink && copyText(phoneLink, $("phone-copy"), "Copy phone link"));
   $("phone-close").addEventListener("click", () => $("phone-dialog").close());
   $("remote-copy").addEventListener("click", () => copyText($("remote-link").textContent, $("remote-copy"), "Copy remote link"));
+  const linkRoom = (new URLSearchParams(location.hash.slice(1)).get("room") || "").toUpperCase();
+  if (/^[A-Z0-9]{4,6}$/.test(linkRoom)) { $("room").value = linkRoom; $("share").checked = true; }  // the TV's room
   build();
   refreshRecent();
   drawPlayback();
