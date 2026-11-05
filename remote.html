@@ -17,6 +17,7 @@
   if (/(^|[#&])remote(&|$)/.test(location.hash)) document.documentElement.classList.add("simple", "embed");
   if (/(^|[#&])requests(&|$)/.test(location.hash)) {
     document.documentElement.classList.add("simple", "requests");
+    if (/(^|[#&])back=remote(&|$)/.test(location.hash)) document.documentElement.classList.add("from-remote");
     document.title = "VCR";
   }
 </script>
@@ -492,15 +493,22 @@
     background: #2a2a2a; color: #fff; font-size: 16px; font-weight: 700; }
   .rq-rec { padding: 6px 10px; border: 0; border-radius: 6px; background: #e50914; color: #fff; font-size: 12px; font-weight: 700; }
   .rq-rec.part { background: #3a3a3a; }
-  /* View VCR: on the phone page only (not the VCR itself, nor the TV's Remote sidebar). */
+  /* View VCR: on the phone page and the TV's Remote sidebar (not on the VCR itself). */
   .view-vcr { display: none; }
-  html.simple:not(.requests):not(.embed) .view-vcr { display: block; margin-top: 10px; padding: 12px; border: 0; border-radius: 6px;
+  html.simple:not(.requests) .view-vcr { display: block; margin-top: 10px; padding: 12px; border: 0; border-radius: 6px;
     background: #2a2a2a; color: #fff; font-size: 16px; font-weight: 700; }
   /* The TV's Remote sidebar: no picture of its own, nor the phone-only buttons. */
   html.embed body { padding-top: 0; }
   html.embed h1::before { content: "REMOTE"; font-size: 24px; }
   html.embed :is(.watch-head, .watch-frame, #watch-here, #watch-sound, .tv-volume, #watch-tv, .watch-share) { display: none !important; }
   html.embed .watch-buttons { grid-template-columns: 1fr 1fr; }
+  /* No search and Play in the sidebar: shows are started from the phone or the VCR. */
+  html.embed .rq-form { display: none !important; }
+  html.embed .view-vcr { margin-top: 0; }
+  /* The VCR opened from the sidebar: a way back to the remote. */
+  .back-remote { display: none; }
+  html.from-remote .back-remote { display: block; width: 100%; margin: 0 0 14px; padding: 12px; border: 0; border-radius: 6px;
+    background: #2a2a2a; color: #fff; font-size: 16px; font-weight: 700; }
   html.requests #share-row, html.requests #watch, html.requests #recent { display: none !important; }
   .rq { display: none; }
   html.requests .rq { display: grid; gap: 8px; }
@@ -576,6 +584,7 @@
 <body>
 <main id="builder">
   <h1>Search Command Builder</h1>
+  <button id="back-remote" class="wide back-remote">◀ Back to Remote</button>
   <p class="remote-status" id="remote-status" hidden></p>
 
   <label class="check adv"><input type="checkbox" id="share"> Share my screen to the TV first <span class="muted">(the show's tab with its sound, through Screen Relay, before finding the show)</span></label>
@@ -1234,8 +1243,15 @@
   document.querySelectorAll("input[name=tvnet]").forEach(r => r.addEventListener("change", showTvLink));
   $("runcmd").addEventListener("click", () => REQUESTS ? requestPlay() : runCommand());
   // View VCR: this page again in its VCR view (the remote link's key is remembered, so it isn't needed in the link).
+  // In the TV's Remote sidebar it opens there, with a button back to the remote for that room.
+  const embedRoom = (location.hash.match(/(?:^#|&)room=([A-Za-z0-9]{4,6})/) || [])[1];
   $("view-vcr").addEventListener("click", () => {
-    location.hash = "requests";
+    const inSidebar = document.documentElement.classList.contains("embed");
+    location.hash = inSidebar ? "requests&back=remote" + (embedRoom ? "&room=" + embedRoom : "") : "requests";
+    location.reload();
+  });
+  $("back-remote").addEventListener("click", () => {
+    location.hash = "remote" + (embedRoom ? "&room=" + embedRoom : "");
     location.reload();
   });
 
