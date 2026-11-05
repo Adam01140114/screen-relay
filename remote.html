@@ -483,7 +483,18 @@
   html.requests h1::before { content: "VCR"; }
   html.requests #share-row, html.requests #watch, html.requests #recent { display: none !important; }
   .rq { display: none; }
-  html.requests .rq { display: grid; gap: 8px; margin-top: 26px; }
+  html.requests .rq { display: grid; gap: 8px; }
+  /* Three boxes: the request form, what's playing, and what's been watched to the end. */
+  html.requests .rq-card { margin-top: 16px; padding: 16px; border-radius: 10px; background: #1b1b1b; }
+  html.requests .rq-form { margin-top: 0; }
+  html.requests .rq-form label[for=url] { margin-top: 12px; }
+  html.requests .rq-card h2 { margin: 0; }
+  html.requests .rq-card .hint { margin: 0 0 4px; }
+  html.requests .rq-card .rq-item { background: #262626; }
+  .rq-count-done { background: #46d369 !important; color: #000 !important; }
+  .rq-done-item { grid-template-columns: 52px 1fr; }
+  .rq-done-item .recent-thumb { width: 52px; }
+  .rq-when { font-size: 12px; color: var(--muted); }
   .rq h2 { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
   .rq h2 .rq-count { font-size: 13px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: #e50914; color: #fff; }
   .rq-empty { color: var(--muted); font-size: 14px; padding: 18px 12px; text-align: center; border: 1px dashed #333; border-radius: 6px; }
@@ -524,6 +535,7 @@
   </div>
   <div class="hint adv" id="share-hint">On the TV, open the relay page with <code>#tv=</code> and the room code on the end so it always uses that code.</div>
 
+  <div class="rq-card rq-form">
   <label for="title">Title</label>
   <input type="text" id="title" placeholder="Search shows and movies" autofocus>
 
@@ -575,10 +587,16 @@
     <button id="copy" class="primary wide">Copy command</button>
   </div>
   <button id="runcmd" class="wide run">Run command</button>
-  <section class="rq" id="rq" aria-label="Playing now">
+  </div>
+  <section class="rq rq-card" id="rq" aria-label="Playing now">
     <h2>Playing now <span class="rq-count" id="rq-count" hidden></span></h2>
     <p class="hint">Each request plays in a room of its own, so several can play at once. Watch opens that room's screen.</p>
     <div id="rq-list"></div>
+  </section>
+  <section class="rq rq-card" id="rq-done" aria-label="Watched to the end">
+    <h2>Watched to the end <span class="rq-count rq-count-done" id="rq-done-count" hidden></span></h2>
+    <p class="hint">Everything that played all the way through, newest first (from the watch log).</p>
+    <div id="rq-done-list"></div>
   </section>
   <button id="phonebtn" class="wide run adv" hidden>Open on my phone</button>
 
@@ -1253,6 +1271,41 @@
       }
     });
     refreshRooms();
+    refreshFinished();
+  }
+  // Watched to the end: the "stop" entries of the watch log, newest first.
+  let rqDoneKey = "";
+  async function refreshFinished() {
+    try {
+      const res = await api("/finished");
+      if (res.ok && Array.isArray(res.body.items)) {
+        const key = JSON.stringify(res.body.items);
+        if (key !== rqDoneKey) { rqDoneKey = key; drawFinished(res.body.items); }
+      }
+    } catch (e) {}
+    setTimeout(refreshFinished, document.hidden ? 120000 : 30000);
+  }
+  function drawFinished(items) {
+    $("rq-done-count").hidden = !items.length;
+    $("rq-done-count").textContent = items.length;
+    if (!items.length) {
+      $("rq-done-list").innerHTML = `<div class="rq-empty">Nothing has played all the way through yet.</div>`;
+      return;
+    }
+    $("rq-done-list").innerHTML = items.map(it => {
+      const ep = it.season ? `Season ${it.season}` + (it.episode ? ` · Episode ${it.episode}` : "") + (it.episode_name ? ` · ${it.episode_name}` : "")
+                           : it.kind === "movie" ? "Movie" : "";
+      let when = it.date + " " + it.time;
+      try { when = new Date(it.date + "T" + it.time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch (e) {}
+      return `<div class="rq-item rq-done-item">
+        <span class="recent-thumb">${it.thumbnail ? `<img src="${escapeHtml(it.thumbnail)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</span>
+        <div class="rq-text">
+          <span class="rq-title">${escapeHtml(it.content || "Untitled")}</span>
+          ${ep ? `<span class="rq-sub">${escapeHtml(ep)}</span>` : ""}
+          <span class="rq-when">Finished ${escapeHtml(when)} · Room ${escapeHtml(it.room || "")}</span>
+        </div>
+      </div>`;
+    }).join("");
   }
   $("tv-copy").addEventListener("click", () => copyText($("tv-link").textContent, $("tv-copy"), "Copy TV link"));
   // Opens the TV page in a new tab, e.g. to watch on this phone.
