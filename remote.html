@@ -1463,7 +1463,7 @@
             : `Started ${at(ep.date, ep.time)}` + (ep.position ? ` · stopped around ${ep.position}` : " · didn't finish");
           return `<div class="rq-ep">
             <span class="rq-ep-acts">
-              <button class="rq-replay" data-title="${escapeHtml(ep.content || sh.content || "")}" data-season="${ep.season || ""}" data-episode="${ep.episode || ""}">▶ Play from start</button>
+              <button class="rq-replay" data-title="${escapeHtml(ep.content || sh.content || "")}" data-season="${ep.season || ""}" data-episode="${ep.episode || ""}">▶ Record Again</button>
               ${(ep.recordings || []).map((rec, k) => `<button class="rq-rec${k ? " part" : ""}" data-url="${escapeHtml(rec.url)}">${k
                 ? `Part ${rec.part}` : "Watch Content" + (ep.recordings.length > 1 ? ` (part ${rec.part})` : "")}</button>`).join("")}
               <button class="rq-del" data-ids="${escapeHtml(JSON.stringify([ep.id]))}" data-what="${escapeHtml(name)}" aria-label="Delete ${escapeHtml(name)}">Delete</button>
@@ -1506,7 +1506,7 @@
       $("rq").scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (err) {
       alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
-      btn.textContent = "▶ Play from start";
+      btn.textContent = "▶ Record Again";
     }
     btn.disabled = false;
     refreshRooms();
