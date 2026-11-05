@@ -145,6 +145,18 @@
   #tv .pl-spacer { flex: 1; }
   #tv .player:not(.paused) .ic-play, #tv .player.paused .ic-pause, #tv .player:not(.muted) .ic-muted, #tv .player.muted .ic-sound { display: none; }
   #tv .player.no-state .needs-state { display: none; }
+  /* Subtitles: a menu over the right end of the bar, read from the show's player when opened. */
+  #tv .pl-cc-menu { position: absolute; right: clamp(20px, 3.5vw, 56px); bottom: calc(100% - 70px); min-width: 260px; max-width: 420px;
+    max-height: 60vh; overflow-y: auto; padding: 8px; border-radius: 10px; background: rgba(20,20,20,0.96); box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+  #tv .pl-cc-menu[hidden] { display: none; }
+  #tv .pl-cc-menu h4 { margin: 4px 10px 8px; color: #fff; font: 700 clamp(1rem, 1.4vw, 1.3rem) var(--body); }
+  #tv .pl-cc-menu .pl-cc-wait { margin: 6px 10px 10px; color: rgba(255,255,255,0.7); font: 500 1rem var(--body); }
+  #tv .pl-cc-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 0; border-radius: 6px; background: none;
+    color: #fff; text-align: left; font: 500 clamp(0.95rem, 1.3vw, 1.2rem) var(--body); cursor: pointer; }
+  #tv .pl-cc-item:hover, #tv .pl-cc-item:focus-visible { background: rgba(255,255,255,0.12); outline: none; }
+  #tv .pl-cc-item .ck { width: 1.2em; color: #e50914; font-weight: 800; }
+  #tv .pl-cc-item small { margin-left: auto; color: rgba(255,255,255,0.55); font-size: 0.85em; }
+  #tv .player.cc-on #plCc { color: #e50914; }
   /* Remote: the phone page in a sidebar the height of the screen, scrolling on its own. */
   #tv .pl-remote { width: auto; border-radius: 999px; display: flex; align-items: center; gap: 8px; padding: 7px 16px 7px 10px;
     font: 600 clamp(0.95rem, 1.4vw, 1.25rem) var(--body); }
@@ -230,6 +242,7 @@
     <div class="player-top chrome"><div class="pl-title" id="plTitle"></div><div class="pl-sub" id="plSub"></div></div>
     <div class="pl-flash" id="plFlash"></div>
     <div class="player-bar chrome" id="plBar">
+      <div class="pl-cc-menu" id="plCcMenu" role="menu" aria-label="Subtitles" hidden></div>
       <div class="pl-progress needs-state" id="plProgress" tabindex="0" role="slider" aria-label="Position in the show" aria-valuemin="0">
         <div class="pl-track"><div class="pl-fill" id="plFill"></div><div class="pl-thumb" id="plThumb"></div></div>
         <div class="pl-tip" id="plTip" hidden></div>
@@ -243,6 +256,7 @@
         <span class="pl-spacer"></span>
         <button class="pl-btn needs-state" id="plPrev" aria-label="Previous episode" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
         <button class="pl-btn needs-state" id="plNext" aria-label="Next episode" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+        <button class="pl-btn needs-state" id="plCc" aria-label="Subtitles" aria-haspopup="menu" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1z"/></svg></button>
         <button class="pl-btn pl-remote" id="plRemote" aria-label="Remote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 9H9c-.55 0-1 .45-1 1v12c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V10c0-.55-.45-1-1-1zm-3 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM7.05 6.05l1.41 1.41C9.37 6.56 10.62 6 12 6s2.63.56 3.54 1.46l1.41-1.41C15.68 4.78 13.93 4 12 4s-3.68.78-4.95 2.05zM12 0C8.96 0 6.21 1.23 4.22 3.22l1.41 1.41C7.26 3.01 9.51 2 12 2s4.74 1.01 6.36 2.64l1.41-1.41C17.79 1.23 15.04 0 12 0z"/></svg><span>Remote</span></button>
         <button class="pl-btn" id="plFs" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></button>
       </div>
@@ -554,9 +568,10 @@ async function startShare(code) {
         return;
       }
       if (!besideHelper || !d || d.type !== "control"
-          || !["toggle", "play", "pause", "seek", "next", "prev"].includes(d.action)) return;
+          || !["toggle", "play", "pause", "seek", "next", "prev", "captions-list", "captions"].includes(d.action)) return;
       const body = { room: code, action: d.action };
       if (d.action === "seek") { body.time = +d.time; if (!Number.isFinite(body.time)) return; }
+      if (d.action === "captions") { body.index = +d.index; if (!Number.isInteger(body.index)) return; }
       fetch("http://localhost:8766/tv-control", { method: "POST", mode: "no-cors",
         headers: { "Content-Type": "text/plain" }, body: JSON.stringify(body) }).catch(() => {});
     });
@@ -715,9 +730,9 @@ function toast(text) {
   clearTimeout(volumeTimer);
   volumeTimer = setTimeout(() => { $("volumeOverlay").hidden = true; }, 1600);
 }
-function tvControl(action, time) {
+function tvControl(action, time, index) {
   let sent = false;
-  for (const c of tvConns) if (c.open) try { c.send({ type: "control", action, time }); sent = true; } catch {}
+  for (const c of tvConns) if (c.open) try { c.send({ type: "control", action, time, index }); sent = true; } catch {}
   if (!sent) toast("Can't reach the computer right now");
   return sent;
 }
@@ -751,6 +766,10 @@ function plUpdate(d) {
   $("plTitle").textContent = d.title || "";
   $("plSub").textContent = [episode, d.episodeName].filter(Boolean).join(" · ");
   $("plPrev").hidden = $("plNext").hidden = !d.season;  // TV shows only
+  const cc = d.captions;
+  $("plCc").hidden = !(cc && cc.available);
+  $("player").classList.toggle("cc-on", !!(cc && cc.items && cc.items.some((x, i) => i > 0 && x.on)));
+  if (!$("plCcMenu").hidden) drawCcMenu();
   $("plPrev").disabled = !d.hasPrev;
   $("plNext").disabled = !d.hasNext;
   // Between episodes (the Mac is opening the next one): a card instead of the site's pages.
@@ -788,7 +807,7 @@ function plWake() {
   player.classList.remove("idle");
   clearTimeout(pl.idleTimer);
   pl.idleTimer = setTimeout(() => {
-    if (pl.dragging) return plWake();
+    if (pl.dragging || !$("plCcMenu").hidden) return plWake();  // not while dragging or picking subtitles
     player.classList.add("idle");
     $("plTip").hidden = true;
     if (player.contains(document.activeElement)) document.activeElement.blur();
@@ -855,6 +874,7 @@ $("player").addEventListener("pointerdown", (e) => {
 $("player").addEventListener("click", (e) => {
   if (e.target.closest(".pl-btn, .pl-progress")) return;
   if (!$("remotePanel").hidden) { toggleRemote(false); return; }  // a tap beside the remote closes it
+  if (!$("plCcMenu").hidden) { toggleCcMenu(false); return; }  // a tap beside the subtitles menu closes it
   const r = $("plBar").getBoundingClientRect();
   if (plIdleAtPress && e.clientY >= r.top) { plWake(); return; }
   plToggle();
@@ -874,6 +894,46 @@ $("plMute").onclick = () => { plMute(); plWake(); };
 $("plPrev").onclick = () => plEpisode(-1);
 $("plNext").onclick = () => plEpisode(1);
 $("plFs").onclick = toggleFullscreen;
+
+// Subtitles: opening the menu asks the computer to read the player's choices (its own menu
+// loads them the first time); they show here when its answer comes in with the next update.
+let ccAskedAt = 0, ccPicked = null;
+function drawCcMenu() {
+  const cc = pl.state && pl.state.captions, menu = $("plCcMenu");
+  const fresh = cc && cc.items && cc.at * 1000 >= ccAskedAt - 1000;
+  const hadFocus = menu.contains(document.activeElement) ? [...menu.querySelectorAll("button")].indexOf(document.activeElement) : -1;
+  if (!fresh) {
+    menu.innerHTML = `<h4>Subtitles</h4><p class="pl-cc-wait">${Date.now() - ccAskedAt > 15000 ? "This player didn't list any." : "Looking for subtitles…"}</p>`;
+    return;
+  }
+  const on = ccPicked != null && Date.now() - ccPicked.at < 8000 ? ccPicked.i : cc.items.findIndex((x) => x.on);
+  menu.innerHTML = "<h4>Subtitles</h4>" + cc.items.map((x, i) => `<button class="pl-cc-item" role="menuitemradio" aria-checked="${i === on}" data-i="${i}">
+    <span class="ck">${i === on ? "✓" : ""}</span><span>${escapeText(x.label)}</span>${x.note ? `<small>${escapeText(x.note)}</small>` : ""}</button>`).join("");
+  const buttons = menu.querySelectorAll("button");
+  if (hadFocus >= 0) buttons[hadFocus]?.focus();  // (redrawn under the remote's focus: keep it)
+}
+const escapeText = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+function toggleCcMenu(open = $("plCcMenu").hidden) {
+  $("plCcMenu").hidden = !open;
+  if (!open) return;
+  ccAskedAt = Date.now();
+  tvControl("captions-list");
+  drawCcMenu();
+  plWake();
+  const first = $("plCcMenu").querySelector("button");
+  if (first) first.focus();
+}
+$("plCc").onclick = (e) => { e.stopPropagation(); toggleCcMenu(); };
+$("plCcMenu").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const b = e.target.closest(".pl-cc-item");
+  if (!b) return;
+  ccPicked = { i: +b.dataset.i, at: Date.now() };
+  tvControl("captions", undefined, +b.dataset.i);
+  toast(b.textContent.trim() === "Off" ? "Subtitles off" : "Subtitles: " + b.querySelector("span:nth-child(2)").textContent);
+  toggleCcMenu(false);
+  $("plCc").focus();
+});
 
 // Remote: the phone page (all its controls, for this TV's room) in a sidebar. On this Mac's
 // Wi-Fi link it's the builder's helper on port 8766 (it asks for the phone code once per TV);
@@ -942,6 +1002,18 @@ $("remoteClose").onclick = () => toggleRemote(false);
 // between the progress bar and the buttons. Any press brings the bar back.
 window.addEventListener("keydown", (e) => {
   if (!$("remotePanel").hidden) { if (e.key === "Escape") toggleRemote(false); return; }  // the remote has the keys
+  if (!$("plCcMenu").hidden) {  // the subtitles menu: up and down through it, OK picks, Back closes
+    plWake();
+    const items = [...$("plCcMenu").querySelectorAll("button")], at = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (e.key === "ArrowUp" && at <= 0) { toggleCcMenu(false); $("plCc").focus(); return; }
+      items[Math.max(0, Math.min(items.length - 1, at + (e.key === "ArrowDown" ? 1 : -1)))]?.focus();
+    } else if (["Escape", "Backspace", "GoBack", "BrowserBack"].includes(e.key)) {
+      e.preventDefault(); toggleCcMenu(false); $("plCc").focus();
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") e.preventDefault();
+    return;  // OK presses the focused choice itself
+  }
   if (!tvCall || tvVideo.hidden || $("player").hidden) return;
   const wasIdle = $("player").classList.contains("idle");
   plWake();

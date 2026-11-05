@@ -402,6 +402,8 @@
     --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 4v16l13-8z'/%3E%3C/svg%3E"); }
   html.simple #watch-sound { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z'/%3E%3C/svg%3E"); }
   html.simple #watch-fs { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z'/%3E%3C/svg%3E"); }
+  html.simple #watch-cc { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1z'/%3E%3C/svg%3E"); }
+  html.simple #watch-cc.cc-on { color: #e50914; }
   html.simple #watch-end { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4 14H8V8h8v8z'/%3E%3C/svg%3E"); }
   html.simple #watch-tv { --ic: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z'/%3E%3C/svg%3E"); }
 
@@ -671,6 +673,7 @@
       <button id="watch-sound" class="ic">Turn on sound</button>
       <button id="watch-fs" class="primary ic" title="Fullscreen on the TV (the Mac's page)">Fullscreen</button>
       <button id="watch-here" class="primary watch-wide ic">Watch Stream</button>
+      <button id="watch-cc" class="ic" hidden>Subtitles</button>
       <button id="watch-end" class="end-stream ic">End Stream</button>
     </div>
     <div class="tv-playback" id="tv-playback">
@@ -739,6 +742,13 @@
     <p class="hint" id="recent-export-hint">Copies your ratings and what you've watched, with instructions, ready to paste into ChatGPT for recommendations.</p>
   </section>
 </main>
+
+<dialog id="cc-dialog" aria-labelledby="cc-title">
+  <h2 id="cc-title">Subtitles</h2>
+  <p class="dlg-status" id="cc-status">Looking for subtitles…</p>
+  <div class="pick-list" id="cc-list"></div>
+  <button id="cc-close" class="wide">Close</button>
+</dialog>
 
 <dialog id="room-dialog" aria-labelledby="room-title">
   <h2 id="room-title">Room in use</h2>
@@ -1631,6 +1641,7 @@
     try { np = (await api("/now-playing?room=" + encodeURIComponent(watchRoomCode))).body || {}; } catch (e) {}
     lockNp = np;
     updatePlayback(np.playback);
+    showCaptions(np.captions);
     $("tv-notice").hidden = !np.notice;
     if (np.notice) $("tv-notice").textContent = np.notice.text;
     const key = JSON.stringify({ ...np, playback: undefined });
@@ -1774,9 +1785,9 @@
   setInterval(drawPlayback, 500);
 
   let tvMsgTimer = null;
-  async function sendControl(action, time) {
+  async function sendControl(action, time, index) {
     try {
-      const res = await api("/control", { room: watchRoomCode, action, time });
+      const res = await api("/control", { room: watchRoomCode, action, time, index });
       if (!res.ok) throw new Error(res.body.error || "Couldn't reach the TV's video.");
       $("tv-msg").hidden = true;
     } catch (e) {
@@ -1919,6 +1930,48 @@
     set("seekforward", d => { seekTo(pbNow() + ((d && d.seekOffset) || 10)); lockSync(); });
     set("seekto", d => { if (d && Number.isFinite(d.seekTime)) { seekTo(d.seekTime); lockSync(); } });
   }
+
+  /* ---------- Subtitles ---------- */
+  // Shown when the show's player has subtitles. Opening the list asks the Mac to read them from
+  // the player (its menu loads them the first time); picking one switches the player to it, so
+  // they show on the TV and everywhere watching.
+  let ccState = null, ccAskedAt = 0, ccPicked = null;
+  function showCaptions(cc) {
+    ccState = cc || null;
+    $("watch-cc").hidden = !(cc && cc.available);
+    $("watch-cc").classList.toggle("cc-on", !!(cc && cc.items && cc.items.some((x, i) => i > 0 && x.on)));
+    if ($("cc-dialog").open) drawCaptions();
+  }
+  function drawCaptions() {
+    const cc = ccState, fresh = cc && cc.items && cc.at * 1000 >= ccAskedAt - 1000;
+    if (!fresh) {
+      $("cc-status").textContent = Date.now() - ccAskedAt > 15000 ? "This player didn't list any subtitles." : "Looking for subtitles…";
+      $("cc-list").innerHTML = "";
+      return;
+    }
+    const on = ccPicked && Date.now() - ccPicked.at < 8000 ? ccPicked.i : cc.items.findIndex(x => x.on);
+    $("cc-status").textContent = "Tap one to show it on the TV.";
+    $("cc-list").innerHTML = cc.items.map((x, i) => `<button class="pick-row${i === on ? " cc-current" : ""}" data-i="${i}">
+      <span class="pick-row-title">${i === on ? "✓ " : ""}${escapeHtml(x.label)}</span>
+      ${x.note ? `<span class="pick-row-sub">${escapeHtml(x.note)}</span>` : ""}</button>`).join("");
+  }
+  $("watch-cc").addEventListener("click", () => {
+    ccAskedAt = Date.now();
+    sendControl("captions-list");
+    drawCaptions();
+    $("cc-dialog").showModal();
+    clearTimeout(npTimer);
+    setTimeout(refreshNowPlaying, 1500);  // its answer, sooner than the usual check
+  });
+  $("cc-list").addEventListener("click", e => {
+    const b = e.target.closest("[data-i]");
+    if (!b) return;
+    ccPicked = { i: +b.dataset.i, at: Date.now() };
+    sendControl("captions", undefined, +b.dataset.i);
+    drawCaptions();
+    setTimeout(() => $("cc-dialog").close(), 400);
+  });
+  $("cc-close").addEventListener("click", () => $("cc-dialog").close());
 
   $("np-server").addEventListener("change", async () => {
     const server = +$("np-server").value;
