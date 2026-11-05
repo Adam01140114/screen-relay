@@ -507,6 +507,11 @@
   .rq-ep { display: grid; gap: 2px; padding: 10px 12px; border-radius: 4px; background: #1d1d1d; }
   .rq-ep-title { font-weight: 700; font-size: 14px; }
   .rq-took { font-size: 12px; color: #ddd; }
+  .rq-ep { grid-template-columns: 1fr auto; column-gap: 10px; }
+  .rq-ep > :not(.rq-del) { grid-column: 1; }
+  .rq-ep .rq-del { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+  .rq-del { padding: 6px 10px; border: 0; border-radius: 6px; background: rgba(229, 9, 20, .14); color: #ff4a52; font-size: 12px; font-weight: 700; }
+  .rq-del-show { justify-self: start; margin-top: 6px; }
   .rq-when { font-size: 12px; color: var(--muted); }
   .rq-when.done { color: #46d369; }
   .rq-filter { display: flex; gap: 6px; margin: 2px 0 4px; }
@@ -1295,7 +1300,7 @@
     refreshFinished();
   }
   // History: every play in the watch log, newest first, marked finished or not.
-  let rqDoneKey = "";
+  let rqDoneKey = "", rqDoneTimer = null;
   async function refreshFinished() {
     try {
       const res = await api("/finished");
@@ -1304,7 +1309,8 @@
         if (key !== rqDoneKey) { rqDoneKey = key; drawFinished(res.body.shows); }
       }
     } catch (e) {}
-    setTimeout(refreshFinished, document.hidden ? 120000 : 15000);
+    clearTimeout(rqDoneTimer);
+    rqDoneTimer = setTimeout(refreshFinished, document.hidden ? 120000 : 15000);
   }
   let rqHistory = [], rqFilter = "all";
   const rqOpen = new Set();  // shows opened, kept open when the list refreshes
@@ -1344,14 +1350,36 @@
           const state = ep.finished ? `✓ Watched to the end · ${at(ep.ended.date, ep.ended.time)}`
             : `Started ${at(ep.date, ep.time)}` + (ep.position ? ` · stopped around ${ep.position}` : " · didn't finish");
           return `<div class="rq-ep">
+            <button class="rq-del" data-ids="${escapeHtml(JSON.stringify([ep.id]))}" data-what="${escapeHtml(name)}" aria-label="Delete ${escapeHtml(name)}">Delete</button>
             <span class="rq-ep-title">${escapeHtml(name)}</span>
             <span class="rq-when${ep.finished ? " done" : ""}">${escapeHtml(state)} · Room ${escapeHtml(ep.room || "")}</span>
             ${ep.watched != null ? `<span class="rq-took">Took ${took(ep.watched)} (not counting pauses)</span>` : ""}
           </div>`;
-        }).join("")}</div>
+        }).join("")}
+        <button class="rq-del rq-del-show" data-ids="${escapeHtml(JSON.stringify(sh.episodes.map(ep => ep.id)))}"
+          data-what="${escapeHtml(sh.content || "this show")}${sh.episodes.length > 1 ? ` (all ${sh.episodes.length} episodes)` : ""}">Delete ${sh.kind === "movie" ? "movie" : "show"} from History</button>
+        </div>
       </details>`;
     }).join("");
   }
+  // Delete: an episode, or a show with all its episodes (as the filter shows them), out of the
+  // watch log and its copies for good.
+  $("rq-done-list").addEventListener("click", async e => {
+    const btn = e.target.closest(".rq-del");
+    if (!btn) return;
+    e.preventDefault();
+    if (!confirm(`Delete ${btn.dataset.what} from History? It's taken out of the watch log too.`)) return;
+    btn.disabled = true;
+    try {
+      const res = await api("/history-delete", { ids: JSON.parse(btn.dataset.ids) });
+      if (!res.ok) throw new Error(res.body.error || "Couldn't delete it.");
+    } catch (err) {
+      alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
+    }
+    rqDoneKey = "";
+    clearTimeout(rqDoneTimer);
+    refreshFinished();
+  });
   $("rq-done-list").addEventListener("toggle", e => {
     const d = e.target.closest && e.target.closest(".rq-show");
     if (d) d.open ? rqOpen.add(d.dataset.key) : rqOpen.delete(d.dataset.key);
