@@ -107,10 +107,16 @@
   #tv .player .chrome { transition: opacity 0.25s; }
   #tv .player.idle { cursor: none; }
   #tv .player.idle .chrome { opacity: 0; pointer-events: none; }
-  /* Between episodes (the Mac is opening the next one): a card over the site's pages. */
-  #tv .pl-loading { position: absolute; inset: 0; background: #000; display: grid; place-content: center; text-align: center; gap: 12px; }
-  #tv .pl-loading .t { font: 700 clamp(1.6rem, 3.6vw, 3.2rem)/1.1 var(--display); color: #fff; }
-  #tv .pl-loading .s { font: 500 clamp(1rem, 1.8vw, 1.6rem) var(--body); color: var(--tv-muted); }
+  /* While the Mac is opening a show: a small label in the corner, so the site's own steps
+     (search, the episode page, the server, the player) stay visible behind it. */
+  #tv .pl-loading { position: absolute; right: clamp(16px, 2.5vw, 40px); bottom: clamp(16px, 2.5vw, 40px); z-index: 2; display: flex; align-items: center; gap: 14px;
+    max-width: 60%; padding: 12px 20px 12px 16px; border-radius: 10px; background: rgba(0,0,0,0.78); pointer-events: none; }
+  #tv .pl-loading[hidden] { display: none; }
+  #tv .pl-loading::before { content: ""; flex: none; width: 26px; height: 26px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.25);
+    border-top-color: #e50914; animation: pl-spin 0.9s linear infinite; }
+  @keyframes pl-spin { to { transform: rotate(360deg); } }
+  #tv .pl-loading .t { font: 700 clamp(1rem, 1.6vw, 1.5rem)/1.2 var(--display); color: #fff; }
+  #tv .pl-loading .s { font: 500 clamp(0.85rem, 1.2vw, 1.15rem) var(--body); color: rgba(255,255,255,0.75); }
   #tv .player-top { position: absolute; left: 0; right: 0; top: 0; padding: clamp(18px, 3vw, 40px) clamp(20px, 3.5vw, 56px) 80px;
     background: linear-gradient(rgba(0,0,0,0.75), transparent); pointer-events: none; }
   #tv .pl-title { font: 700 clamp(1.3rem, 2.6vw, 2.4rem)/1.1 var(--display); color: #fff; }

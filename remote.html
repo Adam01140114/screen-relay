@@ -321,10 +321,15 @@
   .wp-spacer { flex: 1; }
   .wp:not(.paused) .ic-play, .wp.paused .ic-pause, .wp:not(.muted) .ic-muted, .wp.muted .ic-sound { display: none; }
   .wp.no-state .needs-state { display: none !important; }
-  .wp-loading { position: absolute; inset: 0; background: #000; display: grid; place-content: center; text-align: center; gap: 6px; padding: 16px; }
+  /* While the Mac is opening a show: a small label in the corner, so its steps stay visible. */
+  .wp-loading { position: absolute; right: 8px; bottom: 8px; z-index: 1; display: flex; align-items: center; gap: 8px; max-width: 75%;
+    padding: 6px 10px 6px 8px; border-radius: 6px; background: rgba(0,0,0,.78); pointer-events: none; }
   .wp-loading[hidden] { display: none; }
-  .wp-loading .t { font-weight: 700; font-size: 16px; }
-  .wp-loading .s { font-size: 13px; opacity: 0.75; }
+  .wp-loading::before { content: ""; flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,.25);
+    border-top-color: #e50914; animation: wp-spin .9s linear infinite; }
+  @keyframes wp-spin { to { transform: rotate(360deg); } }
+  .wp-loading .t { font-weight: 700; font-size: 12px; line-height: 1.2; }
+  .wp-loading .s { font-size: 11px; opacity: 0.75; }
   /* Fullscreen (Watch Stream): bigger controls. On an iPhone, which can't make part of a page
      fullscreen, the frame fills the screen instead. */
   .watch-frame:fullscreen, .watch-frame:-webkit-full-screen { border-radius: 0; aspect-ratio: auto; }
@@ -1021,7 +1026,9 @@
     // This tap is what lets the phone play the live screen with sound later (browsers only
     // allow sound after a tap), so the video is unlocked for sound right now.
     if (!onThisMac) unlockSound();
-    if (currentRoom && location.protocol !== "file:") {
+    // On the home link (straight to the Mac) a busy room is simply taken over: the new show
+    // replaces what's playing there, on the same screens. Only the remote link asks first.
+    if (currentRoom && location.protocol !== "file:" && REMOTE) {
       let st = null;
       try { st = (await api("/room-status?room=" + encodeURIComponent(currentRoom))).body; } catch (e) {}
       if (st && st.busy) {
