@@ -12,7 +12,7 @@ const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 const {
   THUMB_DIR, LOG_DIR, readLibrary, readJson, loadConfig, saveConfig, expandPath, recorderStatus,
-  recordUrlOf, isHttpUrl, run, openPlays, episodeKey, leadIn, trashCardCopy, probeVideo,
+  recordUrlOf, isHttpUrl, run, openPlays, episodeKey, leadIn, trashCardCopy, probeVideo, ThumbnailCache, writeJson,
 } = require('./library');
 const { pipeline } = require('stream/promises');
 
@@ -183,6 +183,7 @@ async function handle(req, res, { guest = false } = {}) {
       // Never without a picture when one exists: its own, else its show's (another recording
       // of it, or the poster the phone page's search found).
       thumb: item.thumb ? `/thumbs/${item.thumb}` : posterOf(item.title),
+      poster: posterOf(item.title), // the show's or movie's own, for its card
       frame: item.frame && `/thumbs/${item.frame}`,
       media: (file || raw) && `/media/${item.id}`,
       live: !file && Boolean(raw), // media is what's been recorded so far
@@ -492,7 +493,7 @@ function unfinishedInLog(recordings) {
     const title = String(entry.content || url || 'Untitled');
     const cached = thumbIndex[entry.thumbnail]?.[title];
     const thumb = cached && fs.existsSync(path.join(opts.dir, THUMB_DIR, cached)) ? `/thumbs/${cached}`
-      : isHttpUrl(entry.thumbnail) ? entry.thumbnail : null;
+      : savedPoster(title) ? `/thumbs/${savedPoster(title).file}` : isHttpUrl(entry.thumbnail) ? entry.thumbnail : null;
     items.push({
       id: crypto.createHash('sha1').update(`log\n${url}\n${entry.date}\n${entry.time}`).digest('hex').slice(0, 12),
       status: 'log',
@@ -898,18 +899,67 @@ async function moveToCard() {
 }
 setInterval(() => moveToCard().catch(() => {}), 2 * 60_000).unref?.();
 
-// A show's (or movie's) picture by title: one a recording of it already has, else the poster
-// from the phone page's saved search results. Null when there's none anywhere.
-function showPosters(recordings) {
-  const byTitle = new Map();
-  for (const it of recordings) if (it.thumb && !byTitle.has(normTitle(it.title))) byTitle.set(normTitle(it.title), `/thumbs/${it.thumb}`);
+// Show and movie posters, kept on this Mac: thumbnails/shows.json says which saved picture is
+// which title's poster ({"<title, normalised>": {title, file, url}}), and the pictures are in
+// thumbnails/ like the recordings' own. A title's poster is the one the VCR logged with its
+// recordings (thumbnails/index.json), else the one the phone page's search found for it, which
+// is downloaded here. Once a title has one it stays; pages never load a poster from the web.
+const POSTER_FILE = path.join(opts.dir, THUMB_DIR, 'shows.json');
+const posterCache = new ThumbnailCache(path.join(opts.dir, THUMB_DIR));
+posterCache.indexPath = path.join(opts.dir, THUMB_DIR, 'poster-index.json'); // not the recorder's index
+posterCache.index = readJson(posterCache.indexPath) ?? {};
+let posters = readJson(POSTER_FILE) ?? {};
+function savedPoster(title) {
+  const known = posters[normTitle(title)];
+  return known && fs.existsSync(path.join(opts.dir, THUMB_DIR, known.file)) ? known : null;
+}
+async function keepPoster(title, url) {
+  if (!title || !isHttpUrl(url) || savedPoster(title)) return;
+  try {
+    const file = await posterCache.get(url, title);
+    if (!file || savedPoster(title)) return;
+    posters = { ...(readJson(POSTER_FILE) ?? {}), [normTitle(title)]: { title, file, url } };
+    writeJson(POSTER_FILE, posters);
+    console.log(`Saved the poster for ${title}`);
+  } catch (err) {
+    console.error(`Couldn't download the poster for ${title}: ${err.message}`);
+  }
+}
+async function updatePosters() {
+  const recordings = readLibrary(opts.dir);
+  const titles = new Set(recordings.map((it) => normTitle(it.title)));
+  // The VCR's posters for recorded titles, already downloaded by the recorder.
+  const logged = readJson(path.join(opts.dir, THUMB_DIR, 'index.json')) ?? {};
+  let changed = false;
+  for (const [url, byTitle] of Object.entries(logged)) {
+    for (const [title, file] of Object.entries(byTitle ?? {})) {
+      if (!isHttpUrl(url) || /^https?:\/\/(localhost|127\.)/.test(url) || savedPoster(title)) continue;
+      if (!fs.existsSync(path.join(opts.dir, THUMB_DIR, file))) continue;
+      posters[normTitle(title)] = { title, file, url };
+      changed = true;
+    }
+  }
+  if (changed) writeJson(POSTER_FILE, posters);
+  // Recorded titles still without one: the poster the phone page's search found.
   const catalog = readJson(CATALOG_FILE) ?? {};
   for (const results of Object.values(catalog.searches ?? {})) {
     for (const r of Array.isArray(results) ? results : []) {
-      if (r?.poster && /^https?:\/\//.test(r.poster) && !byTitle.has(normTitle(r.title))) byTitle.set(normTitle(r.title), r.poster);
+      if (titles.has(normTitle(r?.title)) && !savedPoster(r.title)) await keepPoster(r.title, r.poster);
     }
   }
-  return (title) => byTitle.get(normTitle(title)) ?? null;
+}
+setTimeout(() => updatePosters().catch(() => {}), 5_000).unref?.();
+setInterval(() => updatePosters().catch(() => {}), 5 * 60_000).unref?.();
+
+// A show's (or movie's) picture by title: its saved poster, else a picture a recording of it
+// has. Null when there's none anywhere.
+function showPosters(recordings) {
+  const byTitle = new Map();
+  for (const it of recordings) if (it.thumb && !byTitle.has(normTitle(it.title))) byTitle.set(normTitle(it.title), `/thumbs/${it.thumb}`);
+  return (title) => {
+    const poster = savedPoster(title);
+    return poster ? `/thumbs/${poster.file}` : byTitle.get(normTitle(title)) ?? null;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1428,7 +1478,16 @@ async function vcrRead(req, res, pathname, searchParams) {
     if (pathname === '/api/vcr/rooms') return sendJson(res, (await vcr('/rooms')).body);
     const pid = String(searchParams.get('pid') ?? '');
     if (!/^\d+$/.test(pid)) return sendJson(res, { error: 'Bad request.' }, 400);
-    return sendJson(res, (await vcr(`/choices?pid=${pid}`)).body);
+    // Search results' posters: the saved copy when there is one (each is downloaded the first
+    // time it's seen), so the sheet doesn't load them from the web.
+    const body = (await vcr(`/choices?pid=${pid}`)).body;
+    for (const r of Array.isArray(body?.items) ? body.items : []) {
+      if (!isHttpUrl(r?.poster) || !r.title) continue;
+      const file = posterCache.index[r.poster]?.[r.title];
+      if (file && fs.existsSync(path.join(opts.dir, THUMB_DIR, file))) r.poster = `/thumbs/${file}`;
+      else keepPoster(r.title, r.poster);
+    }
+    return sendJson(res, body);
   } catch {
     return sendJson(res, { error: 'Can\'t reach the VCR on the Mac.' }, 502);
   }

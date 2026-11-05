@@ -202,8 +202,10 @@ function nextAfter(item) {
 
 // An episode's own picture is a frame from halfway through it (once it's
 // saved); shows, seasons and movies use the title's thumbnail from the log.
+// A show's card: the show's poster. An episode: a frame from it. A movie: its poster.
 function pictureOf(item, { title = false } = {}) {
-  return (!title && item.kind === 'tv' && item.frame) || item.thumb;
+  if (!title && item.kind === 'tv') return item.frame || item.thumb || item.poster;
+  return item.poster || item.thumb;
 }
 
 function artwork(item, options) {
