@@ -335,10 +335,85 @@ async function smoothPlayback(pc, tries = 8) {
   if (!path && tries > 0) { setTimeout(() => smoothPlayback(pc, tries - 1), 1500); return; }  // not connected yet
   const ms = path === "lan" ? 150 : path ? 500 : null;  // Wi-Fi: a sliver, so frames come out evenly
   if (ms === null) return;
+  pc.baseDelayMs = ms;  // (avSync adds to it when the sound and picture drift apart)
   for (const r of pc.getReceivers()) {
     try { r.jitterBufferTarget = ms; } catch {}
     try { r.playoutDelayHint = ms / 1000; } catch {}
   }
+}
+// Keeps the TV's sound and picture together. The browser lines them up by itself, but only a
+// little at a time (it can take most of a minute to undo a jump of a few seconds, e.g. after the
+// TV's Wi-Fi stalls and the sound arrives in a burst). So once a second this compares what's
+// coming out of the speakers with what's on screen (the time each was captured on the Mac) and,
+// when they're apart for a few seconds in a row, holds back whichever one is ahead straight
+// away. Later it eases the hold off again, so the picture doesn't stay later than it needs to.
+const AV_TOLERANCE_MS = 120, AV_MAX_DELAY_MS = 4000;
+function avSync(pc, call) {
+  const rx = {};
+  for (const r of pc.getReceivers()) if (r.track) rx[r.track.kind] = r;
+  if (!rx.audio || !rx.video || avSync.timer && avSync.pc === pc) return;
+  clearInterval(avSync.timer);
+  avSync.pc = pc;
+  const extra = { audio: 0, video: 0 }, prev = {};
+  let smooth = null, strikes = 0, calmSince = Date.now();
+  const apply = () => {
+    for (const kind of ["audio", "video"]) {
+      const ms = Math.min(AV_MAX_DELAY_MS, (pc.baseDelayMs || 0) + extra[kind]);
+      try { rx[kind].jitterBufferTarget = ms; } catch {}
+      try { rx[kind].playoutDelayHint = ms / 1000; } catch {}
+    }
+  };
+  avSync.timer = setInterval(async () => {
+    if (tvCall !== call || pc.connectionState === "closed") { clearInterval(avSync.timer); avSync.timer = null; return; }
+    const now = {};
+    try {
+      (await pc.getStats()).forEach((s) => { if (s.type === "inbound-rtp" && (s.kind === "audio" || s.kind === "video")) now[s.kind] = s; });
+    } catch { return; }
+    const a = now.audio, v = now.video;
+    // How much each is holding right now (the buffer's average over the last second).
+    const held = (s) => {
+      const p = prev[s.kind];
+      prev[s.kind] = s;
+      if (!p || s.jitterBufferEmittedCount <= p.jitterBufferEmittedCount) return null;
+      return Math.round(1000 * (s.jitterBufferDelay - p.jitterBufferDelay) / (s.jitterBufferEmittedCount - p.jitterBufferEmittedCount));
+    };
+    const heldA = a && held(a), heldV = v && held(v);
+    if (!a || !v || !a.estimatedPlayoutTimestamp || !v.estimatedPlayoutTimestamp) return;
+    if (!(prev.frames < v.framesDecoded)) { prev.frames = v.framesDecoded; return; }  // the picture isn't moving
+    prev.frames = v.framesDecoded;
+    // Above zero: the sound is behind (what's heard is from before the frame on screen).
+    const lag = v.estimatedPlayoutTimestamp - a.estimatedPlayoutTimestamp;
+    if (Math.abs(lag) > 20000) return;  // not timed yet
+    smooth = smooth == null ? lag : smooth * 0.5 + lag * 0.5;
+    if (Math.abs(smooth) <= AV_TOLERANCE_MS) {
+      strikes = 0;
+      // In step for half a minute: try holding back a bit less (it comes back if it's needed).
+      if (Date.now() - calmSince > 30000 && (extra.audio || extra.video)) {
+        for (const k of ["audio", "video"]) extra[k] = Math.max(0, extra[k] - 150);
+        apply();
+        calmSince = Date.now();
+      }
+      return;
+    }
+    calmSince = Date.now();
+    if (++strikes < 3) return;
+    strikes = 0;
+    // Hold back the one that's ahead; let go of any hold on the one that's behind first.
+    const behind = smooth > 0 ? "audio" : "video", ahead = smooth > 0 ? "video" : "audio";
+    let gap = Math.abs(smooth);
+    const freed = Math.min(extra[behind], gap);
+    extra[behind] -= freed;
+    gap -= freed;
+    extra[ahead] = Math.min(AV_MAX_DELAY_MS, extra[ahead] + gap);
+    apply();
+    smooth = null;
+    tvReport({ type: "avsync", lag: Math.round(lag), heldAudio: heldA, heldVideo: heldV,
+               holdAudio: extra.audio, holdVideo: extra.video, base: pc.baseDelayMs || 0 });
+  }, 1000);
+}
+// A note for the Mac's log (it's the sharing page there that writes it down).
+function tvReport(d) {
+  for (const c of tvConns) if (c.open) try { c.send(d); } catch {}
 }
 // How each screen is sent the picture, by the way its connection goes. On the same Wi-Fi:
 // full quality, and when bandwidth is short it drops frames rather than sharpness. Across the
@@ -454,6 +529,11 @@ async function startShare(code) {
     // Play/Pause pressed on that screen: handed to the helper on this Mac, which tells the
     // show's run (the same way the phone's Pause/Play does).
     v.conn.on("data", (d) => {
+      if (besideHelper && d && d.type === "avsync") {  // the TV evened out its sound and picture: noted on the Mac
+        fetch("http://localhost:8766/tv-log", { method: "POST", mode: "no-cors",
+          headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ room: code, slot: target, ...d }) }).catch(() => {});
+        return;
+      }
       if (!besideHelper || !d || d.type !== "control"
           || !["toggle", "play", "pause", "seek", "next", "prev"].includes(d.action)) return;
       const body = { room: code, action: d.action };
@@ -877,7 +957,10 @@ function openTvPeer() {
     if (tvCall) tvCall.close();
     tvCall = call;
     call.answer(undefined, { sdpTransform: (sdp) => homeBitrateFloor(hiFiAudio(sdp)) });
-    call.on("stream", (s) => { playOnTv(s); if (call.peerConnection) smoothPlayback(call.peerConnection); });
+    call.on("stream", (s) => {
+      playOnTv(s);
+      if (call.peerConnection) { smoothPlayback(call.peerConnection); setTimeout(() => avSync(call.peerConnection, call), 4000); }
+    });
     call.on("close", () => { if (tvCall === call) endTvStream(); });
     const pc = call.peerConnection;
     if (pc) pc.addEventListener("connectionstatechange", () => {
