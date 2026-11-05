@@ -1391,15 +1391,17 @@
       if (watch && watch.dataset.link) window.open(watch.dataset.link, "_blank", "noopener");
       if (end) {
         const room = end.dataset.room;
-        if (!confirm(`End what's playing in room ${room}? It stops on every screen watching it.`)) return;
+        if (!confirm(`End what's playing in room ${room}? It stops on every screen watching it, and isn't kept in History.`)) return;
         end.disabled = true;
         try {
-          const res = await api("/stop", { room });
+          const res = await api("/stop", { room, forget: true });  // gone completely, History and watch log too
           if (!res.ok) throw new Error(res.body.error || "Couldn't end it.");
         } catch (err) {
           alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
         }
         refreshRooms();
+        rqDoneKey = "";
+        refreshFinished();
       }
     });
     refreshRooms();
