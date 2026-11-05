@@ -486,6 +486,12 @@
   html.simple .wp-shade { background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.25) 35%, rgba(0,0,0,.25) 65%, rgba(0,0,0,.7)); }
   /* ===== VCR (html.requests) ===== */
   html.requests h1::before { content: "VCR"; }
+  /* View Recordings: on the VCR only (the Recordings app on this Mac). */
+  .view-recordings { display: none; }
+  html.requests .view-recordings { display: block; margin: 12px 0 0; padding: 12px; border: 0; border-radius: 6px;
+    background: #2a2a2a; color: #fff; font-size: 16px; font-weight: 700; }
+  .rq-rec { padding: 6px 10px; border: 0; border-radius: 6px; background: #e50914; color: #fff; font-size: 12px; font-weight: 700; }
+  .rq-rec.part { background: #3a3a3a; }
   /* View VCR: on the phone page only (not the VCR itself, nor the TV's Remote sidebar). */
   .view-vcr { display: none; }
   html.simple:not(.requests):not(.embed) .view-vcr { display: block; margin-top: 10px; padding: 12px; border: 0; border-radius: 6px;
@@ -558,8 +564,10 @@
   .rq-actions button { padding: 9px 14px; font-weight: 700; border: 0; border-radius: 6px; }
   .rq-actions .rq-watch { background: #fff; color: #000; }
   .rq-replay { padding: 6px 10px; border: 0; border-radius: 6px; background: #fff; color: #000; font-size: 12px; font-weight: 700; }
-  .rq-ep-acts { grid-column: 2; grid-row: 1 / span 3; display: grid; gap: 6px; align-self: center; }
-  .rq-ep .rq-ep-acts .rq-del { grid-column: auto; grid-row: auto; }
+  /* An episode's buttons: a row under its details (wrapping on a narrow phone). */
+  .rq-ep { grid-template-columns: 1fr; }
+  .rq-ep .rq-ep-acts { grid-column: 1; grid-row: auto; order: 9; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .rq-ep .rq-ep-acts .rq-del { grid-column: auto; grid-row: auto; margin-left: auto; }
   .rq-actions .rq-play { display: flex; align-items: center; justify-content: center; gap: 4px; background: #2a2a2a; color: #fff; }
   .rq-actions .rq-play svg { width: 16px; height: 16px; fill: currentColor; }
   .rq-actions .rq-end { background: rgba(229, 9, 20, .16); color: #ff4a52; font-size: 13px; padding: 6px 10px; }
@@ -637,6 +645,7 @@
   <button id="runcmd" class="wide run">Run command</button>
   </div>
   <button id="view-vcr" class="wide view-vcr">View VCR</button>
+  <button id="view-recordings" class="wide view-recordings">View Recordings</button>
   <section class="rq rq-card" id="rq" aria-label="Playing now">
     <h2>Playing now <span class="rq-count" id="rq-count" hidden></span></h2>
     <p class="hint">Each request plays in a room of its own, so several can play at once. Watch opens that room's screen.</p>
@@ -1455,6 +1464,8 @@
           return `<div class="rq-ep">
             <span class="rq-ep-acts">
               <button class="rq-replay" data-title="${escapeHtml(ep.content || sh.content || "")}" data-season="${ep.season || ""}" data-episode="${ep.episode || ""}">▶ Play from start</button>
+              ${(ep.recordings || []).map((rec, k) => `<button class="rq-rec${k ? " part" : ""}" data-url="${escapeHtml(rec.url)}">${k
+                ? `Part ${rec.part}` : "Watch Content" + (ep.recordings.length > 1 ? ` (part ${rec.part})` : "")}</button>`).join("")}
               <button class="rq-del" data-ids="${escapeHtml(JSON.stringify([ep.id]))}" data-what="${escapeHtml(name)}" aria-label="Delete ${escapeHtml(name)}">Delete</button>
             </span>
             <span class="rq-ep-title">${escapeHtml(name)}</span>
@@ -1470,6 +1481,14 @@
   }
   // Delete: an episode, or a show with all its episodes (as the filter shows them), out of the
   // watch log and its copies for good.
+  // Watch Content: the recording of that episode (its mp4) from the Recordings app.
+  $("rq-done-list").addEventListener("click", e => {
+    const b = e.target.closest(".rq-rec");
+    if (!b) return;
+    e.preventDefault();
+    window.open(b.dataset.url, "_blank", "noopener");
+  });
+  $("view-recordings").addEventListener("click", () => { location.href = "http://10.0.0.122:7777/"; });
   // Play from start: that episode (or movie) again from the beginning, in a room of its own.
   $("rq-done-list").addEventListener("click", async e => {
     const btn = e.target.closest(".rq-replay");
