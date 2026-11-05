@@ -10,11 +10,11 @@
   // The remote page (anything not served by the helper on port 8766) is always simple too.
   if (!["localhost", "127.0.0.1", ""].includes(location.hostname)
       || (location.protocol !== "file:" && location.port !== "8766")) document.documentElement.classList.add("simple");
-  // The Play Requests page (#requests in the link): ask for shows, each plays in a room of its
+  // The VCR page (#requests in the link): ask for shows, each plays in a room of its
   // own, several at once; below, everything playing, in which room, how far along, and Watch.
   if (/(^|[#&])requests(&|$)/.test(location.hash)) {
     document.documentElement.classList.add("simple", "requests");
-    document.title = "Play Requests";
+    document.title = "VCR";
   }
 </script>
 <style>
@@ -479,8 +479,8 @@
   html.simple .wp-mid button { width: 40px; height: 40px; }
   html.simple .wp-mid .wp-big { width: 60px; height: 60px; }
   html.simple .wp-shade { background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.25) 35%, rgba(0,0,0,.25) 65%, rgba(0,0,0,.7)); }
-  /* ===== Play Requests (html.requests) ===== */
-  html.requests h1::before { content: "PLAY REQUESTS"; font-size: 26px; }
+  /* ===== VCR (html.requests) ===== */
+  html.requests h1::before { content: "VCR"; }
   html.requests #share-row, html.requests #watch, html.requests #recent { display: none !important; }
   .rq { display: none; }
   html.requests .rq { display: grid; gap: 8px; margin-top: 26px; }
@@ -501,6 +501,8 @@
   .rq-actions { display: grid; gap: 6px; }
   .rq-actions button { padding: 9px 14px; font-weight: 700; border: 0; border-radius: 6px; }
   .rq-actions .rq-watch { background: #fff; color: #000; }
+  .rq-actions .rq-play { display: flex; align-items: center; justify-content: center; gap: 4px; background: #2a2a2a; color: #fff; }
+  .rq-actions .rq-play svg { width: 16px; height: 16px; fill: currentColor; }
   .rq-actions .rq-end { background: rgba(229, 9, 20, .16); color: #ff4a52; font-size: 13px; padding: 6px 10px; }
 </style>
 </head>
@@ -778,11 +780,11 @@
   // Single-quote for the shell so titles with spaces, quotes, $ or ! are safe.
   const q = s => "'" + s.replace(/'/g, "'\\''") + "'";
   const shq = s => /^[A-Za-z0-9_.,:=@%+\/-]+$/.test(s) ? s : q(s);   // only quote when needed
-  const REQUESTS = document.documentElement.classList.contains("requests");  // the Play Requests page
+  const REQUESTS = document.documentElement.classList.contains("requests");  // the VCR page
   const store = {
     get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set: (k, v) => {
-      // Play Requests picks a new room for every request: that mustn't change the phone page's room.
+      // VCR picks a new room for every request: that mustn't change the phone page's room.
       if ((k === "room" || k === "share") && REQUESTS) return;
       try { localStorage.setItem(k, v); } catch (e) {}
     },
@@ -1142,7 +1144,7 @@
   document.querySelectorAll("input[name=tvnet]").forEach(r => r.addEventListener("change", showTvLink));
   $("runcmd").addEventListener("click", () => REQUESTS ? requestPlay() : runCommand());
 
-  /* ---------- Play Requests ---------- */
+  /* ---------- VCR ---------- */
   // A request gets a room no one is using (four letters and digits, picked at random), then
   // runs like Play on the phone page: the results show up to pick from, and it plays there.
   // The list below shows every room playing on the Mac, refreshed every few seconds.
@@ -1206,6 +1208,9 @@
           ${pb && pb.duration ? `<span class="recent-bar"><span style="width:${(100 * t / pb.duration).toFixed(1)}%"></span></span>` : ""}
         </div>
         <div class="rq-actions">
+          ${pb ? `<button class="rq-play" data-room="${escapeHtml(r.room)}" data-act="${pb.paused ? "play" : "pause"}">${pb.paused
+              ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Play`
+              : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>Pause`}</button>` : ""}
           <button class="rq-watch" data-link="${escapeHtml(link || "")}">Watch</button>
           <button class="rq-end" data-room="${escapeHtml(r.room)}">End</button>
         </div>
@@ -1215,7 +1220,24 @@
   if (REQUESTS) {
     setInterval(() => { if (rqRooms.some(r => r.playback && !r.playback.paused)) drawRooms(); }, 1000);
     $("rq-list").addEventListener("click", async e => {
-      const watch = e.target.closest(".rq-watch"), end = e.target.closest(".rq-end");
+      const watch = e.target.closest(".rq-watch"), end = e.target.closest(".rq-end"), play = e.target.closest(".rq-play");
+      if (play) {  // Play or Pause that room: shown straight away, then done by the Mac
+        const r = rqRooms.find(x => x.room === play.dataset.room), act = play.dataset.act;
+        if (r && r.playback) {
+          r.playback.time = Math.min(r.playback.duration || Infinity, r.playback.time + (r.playback.paused ? 0 : (Date.now() - rqAt) / 1000));
+          r.playback.paused = act === "pause";
+          rqAt = Date.now();
+          drawRooms();
+        }
+        try {
+          const res = await api("/control", { room: play.dataset.room, action: act });
+          if (!res.ok) throw new Error(res.body.error || "Couldn't reach that room's video.");
+        } catch (err) {
+          alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
+        }
+        setTimeout(refreshRooms, 1500);
+        return;
+      }
       if (watch && watch.dataset.link) window.open(watch.dataset.link, "_blank", "noopener");
       if (end) {
         const room = end.dataset.room;
@@ -1270,7 +1292,7 @@
       + params.split(";").filter(p => p && !/^(stereo|sprop-stereo|maxaveragebitrate)=/.test(p))
           .concat(["stereo=1", "sprop-stereo=1", "maxaveragebitrate=510000"]).join(";"));
   }
-  // (the Play Requests page works the phone's way everywhere, this Mac included)
+  // (the VCR page works the phone's way everywhere, this Mac included)
   const onThisMac = ["localhost", "127.0.0.1"].includes(location.hostname) && location.port === "8766" && !REQUESTS;
   let watchPeer = null, watchCall = null, watchRoomCode = null, watchSlot = 0, watchTimer = null;
   const wv = $("watch-video");
@@ -2172,7 +2194,7 @@
       try {
         const res = await api("/history");
         if (res.ok && Array.isArray(res.body.items)) recentItems = res.body.items;
-        // A device opening Play Requests for the first time: the site from the last show watched.
+        // A device opening VCR for the first time: the site from the last show watched.
         if (REQUESTS && !$("url").value.trim()) {
           const last = recentItems.find(it => it.site || it.show_url);
           let site = last && last.site;
