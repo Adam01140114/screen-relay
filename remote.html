@@ -1246,7 +1246,7 @@
         <span class="recent-thumb">${live ? posterHtml(live) : ""}</span>
         <div class="rq-text">
           <span class="rq-room">Room ${escapeHtml(r.room)}</span>
-          <span class="rq-title">${escapeHtml(r.title || (r.loading && r.loading.title) || "Starting…")}</span>
+          <span class="rq-title">${escapeHtml(showTitle(r.title || (r.loading && r.loading.title)) || "Starting…")}</span>
           ${ep ? `<span class="rq-sub">${escapeHtml(ep)}</span>` : ""}
           <span class="rq-state ${pb && !pb.paused ? "live" : pb ? "" : "loading"}">${escapeHtml(state)}</span>
           ${pb && pb.duration ? `<span class="recent-bar"><span style="width:${(100 * t / pb.duration).toFixed(1)}%"></span></span>` : ""}
@@ -1339,7 +1339,7 @@
         <summary>
           <span class="recent-thumb">${sh.thumbnail ? `<img src="${escapeHtml(sh.thumbnail)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</span>
           <span class="rq-text">
-            <span class="rq-title">${escapeHtml(sh.content || "Untitled")}</span>
+            <span class="rq-title">${escapeHtml(showTitle(sh.content) || "Untitled")}</span>
             <span class="rq-sub">${escapeHtml(count)}${done ? ` · ${done} watched to the end` : ""}${total ? ` · ${took(total)} watched` : ""}</span>
             <span class="rq-when">Last played ${escapeHtml(at(last.date, last.time))}</span>
           </span>
@@ -2163,6 +2163,9 @@
   // The run searches, then waits: its results show up here as posters, and the one tapped
   // is what it opens (a TV show or a movie).
   let pickTimer = null, pickShownId = null, pickShownRev = 0, pickPid = null;
+  // A title typed all in small letters ("family guy") shows capitalized ("Family Guy"); one with
+  // any capitals is the site's own spelling ("iCarly", "SpongeBob") and is left alone.
+  const showTitle = t => !t || /[A-Z]/.test(t) ? t : String(t).replace(/(^|[\s\-:(])([a-z])/g, (m, a, b) => a + b.toUpperCase());
   const escapeHtml = t => String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
   // Keeps checking while the run goes: it may ask several things in turn (which title,
