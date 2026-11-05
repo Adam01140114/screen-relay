@@ -239,6 +239,11 @@
   .pick-row.watched, .pick-card.watched { opacity: .45; }
   .pick-row.watched .pick-row-title::after { content: "  ✓ Watched"; font-weight: 500; font-size: 13px; }
   .pick-badge.seen { left: auto; right: 6px; background: rgba(0, 0, 0, .75); color: #fff; }
+  /* Already recorded: plays the recording instead of streaming it again. */
+  .pick-badge.rec { top: auto; bottom: 6px; background: #e50914; color: #fff; }
+  .pick-rec { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; vertical-align: 2px;
+              font: 700 11px/1.6 -apple-system, sans-serif; color: #fff; background: #e50914; }
+  .pick-row.recorded, .pick-card.recorded { opacity: 1; }
 
   .remote-status { margin: -8px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
   .remote-status.ok { color: var(--ok); }
@@ -1332,6 +1337,7 @@
   // Tailscale name or address, the relay's port), on the Wi-Fi at home, otherwise the public link.
   function roomLink(r) {
     const host = location.hostname;
+    if (!REMOTE && location.protocol === "https:") return r.publicLink;  // the public link: the public relay
     if (!REMOTE && (/\.ts\.net$/i.test(host) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host)))
       return `http://${host}:8765/#tv=${encodeURIComponent(r.room)}`;
     return REMOTE ? r.publicLink : (r.lanLink || r.publicLink);
@@ -2466,7 +2472,7 @@
   /* ---------- Pick a result (phone) ---------- */
   // The run searches, then waits: its results show up here as posters, and the one tapped
   // is what it opens (a TV show or a movie).
-  let pickTimer = null, pickShownId = null, pickShownRev = 0, pickPid = null;
+  let pickTimer = null, pickShownId = null, pickShownRev = 0, pickPid = null, pickShownItems = [];
   // A title typed all in small letters ("family guy") shows capitalized ("Family Guy"); one with
   // any capitals is the site's own spelling ("iCarly", "SpongeBob") and is left alone.
   const showTitle = t => !t || /[A-Z]/.test(t) ? t : String(t).replace(/(^|[\s\-:(])([a-z])/g, (m, a, b) => a + b.toUpperCase());
@@ -2522,19 +2528,22 @@
     $("pick-status").className = "dlg-status";
     $("pick-grid").className = list ? "pick-list" : "pick-grid";
     $("pick-grid").innerHTML = list ? data.items.map((it, i) => `
-      <button class="pick-row${it.watched ? " watched" : ""}" data-index="${i}">
-        <span class="pick-row-title">${escapeHtml(it.title)}</span>
-        ${it.subtitle ? `<span class="pick-row-sub">${escapeHtml(it.subtitle)}</span>` : ""}
+      <button class="pick-row${it.watched ? " watched" : ""}${it.recording ? " recorded" : ""}" data-index="${i}">
+        <span class="pick-row-title">${escapeHtml(it.title)}${it.recording ? `<span class="pick-rec">▶ Recorded</span>` : ""}</span>
+        ${it.subtitle || it.recorded ? `<span class="pick-row-sub">${escapeHtml([it.subtitle, it.recorded && `${it.recorded} recorded`].filter(Boolean).join(" · "))}</span>` : ""}
       </button>`).join("") : resultSections(data.items, (it, i) => `
       <button class="pick-card${it.watched ? " watched" : ""}" data-index="${i}">
         <span class="pick-poster">
           ${it.poster ? `<img src="${escapeHtml(it.poster)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}
           <span class="pick-badge ${it.kind === "tv" ? "tv" : ""}">${it.kind === "tv" ? "TV" : "Movie"}</span>
           ${it.watched ? `<span class="pick-badge seen">✓ Watched</span>` : ""}
+          ${it.recording ? `<span class="pick-badge rec">▶ Recorded</span>` : ""}
         </span>
         <span class="pick-name">${escapeHtml(it.title)}</span>
       </button>`);
     $("pick-grid").querySelectorAll("img").forEach(img => img.addEventListener("error", () => img.remove()));
+    pickShownItems = data.items;
+    if (data.items.some(it => it.recording)) $("pick-status").textContent += " ▶ Recorded ones play the recording right away.";
     if (sameQuestion) $("pick-grid").scrollTop = scroll;  // more were added: stay where you were
     if (!$("pick-dialog").open) $("pick-dialog").showModal();
   }
@@ -2543,6 +2552,19 @@
     const card = e.target.closest(".pick-card, .pick-row");
     if (!card) return;
     unlockSound();  // this tap also counts for the live screen's sound
+    const recording = (pickShownItems[+card.dataset.index] || {}).recording;
+    if (recording) {
+      // Already recorded: play the recording instead of streaming it from the site again. The run
+      // that asked is ended (nothing was logged yet), and the recording opens in Recordings.
+      const opened = window.open(recording, "_blank");
+      $("pick-dialog").close();
+      const args = currentArgs || [], at = args.indexOf("--share-room");
+      const room = at >= 0 ? args[at + 1] : null;
+      if (room) api("/stop", { room, forget: true }).catch(() => {});
+      pickPid = null;
+      if (!opened) location.href = recording;
+      return;
+    }
     $("pick-grid").querySelectorAll("button").forEach(b => b.disabled = true);
     $("pick-status").textContent = "Opening…";
     try {
