@@ -10,6 +10,12 @@
   // The remote page (anything not served by the helper on port 8766) is always simple too.
   if (!["localhost", "127.0.0.1", ""].includes(location.hostname)
       || (location.protocol !== "file:" && location.port !== "8766")) document.documentElement.classList.add("simple");
+  // The Play Requests page (#requests in the link): ask for shows, each plays in a room of its
+  // own, several at once; below, everything playing, in which room, how far along, and Watch.
+  if (/(^|[#&])requests(&|$)/.test(location.hash)) {
+    document.documentElement.classList.add("simple", "requests");
+    document.title = "Play Requests";
+  }
 </script>
 <style>
   :root {
@@ -473,6 +479,29 @@
   html.simple .wp-mid button { width: 40px; height: 40px; }
   html.simple .wp-mid .wp-big { width: 60px; height: 60px; }
   html.simple .wp-shade { background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.25) 35%, rgba(0,0,0,.25) 65%, rgba(0,0,0,.7)); }
+  /* ===== Play Requests (html.requests) ===== */
+  html.requests h1::before { content: "PLAY REQUESTS"; font-size: 26px; }
+  html.requests #share-row, html.requests #watch, html.requests #recent { display: none !important; }
+  .rq { display: none; }
+  html.requests .rq { display: grid; gap: 8px; margin-top: 26px; }
+  .rq h2 { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+  .rq h2 .rq-count { font-size: 13px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: #e50914; color: #fff; }
+  .rq-empty { color: var(--muted); font-size: 14px; padding: 18px 12px; text-align: center; border: 1px dashed #333; border-radius: 6px; }
+  .rq-item { display: grid; grid-template-columns: 68px 1fr auto; gap: 12px; align-items: center; padding: 10px; border-radius: 6px; background: #1f1f1f; }
+  .rq-item .recent-thumb { width: 68px; border: 0; border-radius: 4px; background: #2a2a2a; }
+  .rq-text { display: grid; gap: 3px; min-width: 0; }
+  .rq-room { font: 700 11px/1 -apple-system, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #fff;
+    background: #333; border-radius: 3px; padding: 4px 6px; justify-self: start; }
+  .rq-title { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rq-sub, .rq-state { font-size: 13px; color: var(--muted); line-height: 1.35; }
+  .rq-state.live { color: #46d369; }
+  .rq-state.loading { color: #f5c518; }
+  .rq-item .recent-bar { height: 3px; background: #4d4d4d; border-radius: 0; margin-top: 4px; }
+  .rq-item .recent-bar span { background: #e50914; }
+  .rq-actions { display: grid; gap: 6px; }
+  .rq-actions button { padding: 9px 14px; font-weight: 700; border: 0; border-radius: 6px; }
+  .rq-actions .rq-watch { background: #fff; color: #000; }
+  .rq-actions .rq-end { background: rgba(229, 9, 20, .16); color: #ff4a52; font-size: 13px; padding: 6px 10px; }
 </style>
 </head>
 <body>
@@ -544,6 +573,11 @@
     <button id="copy" class="primary wide">Copy command</button>
   </div>
   <button id="runcmd" class="wide run">Run command</button>
+  <section class="rq" id="rq" aria-label="Playing now">
+    <h2>Playing now <span class="rq-count" id="rq-count" hidden></span></h2>
+    <p class="hint">Each request plays in a room of its own, so several can play at once. Watch opens that room's screen.</p>
+    <div id="rq-list"></div>
+  </section>
   <button id="phonebtn" class="wide run adv" hidden>Open on my phone</button>
 
   <section class="watch" id="watch" hidden aria-label="Live screen">
@@ -744,9 +778,14 @@
   // Single-quote for the shell so titles with spaces, quotes, $ or ! are safe.
   const q = s => "'" + s.replace(/'/g, "'\\''") + "'";
   const shq = s => /^[A-Za-z0-9_.,:=@%+\/-]+$/.test(s) ? s : q(s);   // only quote when needed
+  const REQUESTS = document.documentElement.classList.contains("requests");  // the Play Requests page
   const store = {
     get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
-    set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+    set: (k, v) => {
+      // Play Requests picks a new room for every request: that mustn't change the phone page's room.
+      if ((k === "room" || k === "share") && REQUESTS) return;
+      try { localStorage.setItem(k, v); } catch (e) {}
+    },
     del: k => { try { localStorage.removeItem(k); } catch (e) {} },
   };
 
@@ -968,7 +1007,8 @@
   $("copy").addEventListener("click", () => copyText($("out").textContent, $("copy"), "Copy command"));
 
   /* ---------- Run command ---------- */
-  const RUN_LABEL = document.documentElement.classList.contains("simple") ? "Play" : "Run command";
+  const RUN_LABEL = document.documentElement.classList.contains("requests") ? "Request it"
+    : document.documentElement.classList.contains("simple") ? "Play" : "Run command";
   $("runcmd").textContent = RUN_LABEL;
   // Run works when this page is served by builder-server.py (http://localhost:8766/), which
   // starts search.py with these exact arguments. The pop-up shows the link to open on the TV:
@@ -1085,7 +1125,7 @@
           $("runcmd").textContent = "Started!";
           setTimeout(() => $("runcmd").textContent = RUN_LABEL, 1500);
         }
-        if (currentRoom) watchRoom(currentRoom, body.publicRelay, body.relayRunning ? body.lanRelay : null);
+        if (currentRoom && !REQUESTS) watchRoom(currentRoom, body.publicRelay, body.relayRunning ? body.lanRelay : null);
       }
     } catch (e) {
       setDialogStatus(e.message === "Failed to fetch"
@@ -1100,7 +1140,98 @@
   const savedNet = store.get("tvnet");
   if (savedNet) { const r = document.querySelector(`input[name=tvnet][value="${savedNet}"]`); if (r) r.checked = true; }
   document.querySelectorAll("input[name=tvnet]").forEach(r => r.addEventListener("change", showTvLink));
-  $("runcmd").addEventListener("click", () => runCommand());
+  $("runcmd").addEventListener("click", () => REQUESTS ? requestPlay() : runCommand());
+
+  /* ---------- Play Requests ---------- */
+  // A request gets a room no one is using (four letters and digits, picked at random), then
+  // runs like Play on the phone page: the results show up to pick from, and it plays there.
+  // The list below shows every room playing on the Mac, refreshed every few seconds.
+  const RQ_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let rqRooms = [], rqAt = 0, rqTimer = null;
+  async function requestPlay() {
+    if (!$("title").value.trim() || !$("url").value.trim()) return;
+    $("runcmd").disabled = true;
+    $("runcmd").textContent = "Finding a room…";
+    let code = null;
+    try {
+      const taken = new Set(rqRooms.map(r => r.room));
+      for (let i = 0; i < 8 && !code; i++) {
+        const c = Array.from({ length: 4 }, () => RQ_CHARS[Math.floor(Math.random() * RQ_CHARS.length)]).join("");
+        if (taken.has(c)) continue;
+        const st = (await api("/room-status?room=" + c)).body;
+        if (st && !st.busy) code = c;
+      }
+    } catch (e) {}
+    $("runcmd").disabled = false;
+    $("runcmd").textContent = RUN_LABEL;
+    if (!code) { alert("Can't reach your Mac."); return; }
+    $("share").checked = true;
+    $("room").value = code;
+    build();
+    await runCommand();
+    refreshRooms();
+  }
+  async function refreshRooms() {
+    clearTimeout(rqTimer);
+    try {
+      const res = await api("/rooms");
+      if (res.ok && Array.isArray(res.body.rooms)) { rqRooms = res.body.rooms; rqAt = Date.now(); }
+    } catch (e) {}
+    drawRooms();
+    rqTimer = setTimeout(refreshRooms, document.hidden ? 15000 : 3000);
+  }
+  function drawRooms() {
+    $("rq-count").hidden = !rqRooms.length;
+    $("rq-count").textContent = rqRooms.length;
+    if (!rqRooms.length) {
+      $("rq-list").innerHTML = `<div class="rq-empty">Nothing is playing. Request something above.</div>`;
+      return;
+    }
+    $("rq-list").innerHTML = rqRooms.map(r => {
+      const pb = r.playback, live = recentItems.find(it => (it.live || []).includes(r.room));
+      const t = pb ? Math.min(pb.duration || Infinity, pb.time + (pb.paused ? 0 : (Date.now() - rqAt) / 1000)) : 0;
+      const ep = r.season ? `Season ${r.season}` + (r.episode ? ` · Episode ${r.episode}` : "") + (r.episodeName ? ` · ${r.episodeName}` : "")
+                          : r.kind === "movie" ? "Movie" : "";
+      const state = pb ? `${pb.paused ? "Paused" : "Playing"} · ${clock(t)} of ${clock(pb.duration)}`
+        : r.loading ? "Loading" + (r.loading.season ? ` Season ${r.loading.season}` + (r.loading.episode ? ` · Episode ${r.loading.episode}` : "") : "") + "…"
+        : "Starting…";
+      const link = REMOTE ? r.publicLink : (r.lanLink || r.publicLink);
+      return `<div class="rq-item">
+        <span class="recent-thumb">${live ? posterHtml(live) : ""}</span>
+        <div class="rq-text">
+          <span class="rq-room">Room ${escapeHtml(r.room)}</span>
+          <span class="rq-title">${escapeHtml(r.title || (r.loading && r.loading.title) || "Starting…")}</span>
+          ${ep ? `<span class="rq-sub">${escapeHtml(ep)}</span>` : ""}
+          <span class="rq-state ${pb && !pb.paused ? "live" : pb ? "" : "loading"}">${escapeHtml(state)}</span>
+          ${pb && pb.duration ? `<span class="recent-bar"><span style="width:${(100 * t / pb.duration).toFixed(1)}%"></span></span>` : ""}
+        </div>
+        <div class="rq-actions">
+          <button class="rq-watch" data-link="${escapeHtml(link || "")}">Watch</button>
+          <button class="rq-end" data-room="${escapeHtml(r.room)}">End</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+  if (REQUESTS) {
+    setInterval(() => { if (rqRooms.some(r => r.playback && !r.playback.paused)) drawRooms(); }, 1000);
+    $("rq-list").addEventListener("click", async e => {
+      const watch = e.target.closest(".rq-watch"), end = e.target.closest(".rq-end");
+      if (watch && watch.dataset.link) window.open(watch.dataset.link, "_blank", "noopener");
+      if (end) {
+        const room = end.dataset.room;
+        if (!confirm(`End what's playing in room ${room}? It stops on every screen watching it.`)) return;
+        end.disabled = true;
+        try {
+          const res = await api("/stop", { room });
+          if (!res.ok) throw new Error(res.body.error || "Couldn't end it.");
+        } catch (err) {
+          alert(err.message === "Failed to fetch" ? "Can't reach your Mac." : err.message);
+        }
+        refreshRooms();
+      }
+    });
+    refreshRooms();
+  }
   $("tv-copy").addEventListener("click", () => copyText($("tv-link").textContent, $("tv-copy"), "Copy TV link"));
   // Opens the TV page in a new tab, e.g. to watch on this phone.
   $("tv-open").addEventListener("click", () => { const link = tvLinks[tvNet()]; if (link) window.open(link, "_blank", "noopener"); });
@@ -1139,7 +1270,8 @@
       + params.split(";").filter(p => p && !/^(stereo|sprop-stereo|maxaveragebitrate)=/.test(p))
           .concat(["stereo=1", "sprop-stereo=1", "maxaveragebitrate=510000"]).join(";"));
   }
-  const onThisMac = ["localhost", "127.0.0.1"].includes(location.hostname) && location.port === "8766";
+  // (the Play Requests page works the phone's way everywhere, this Mac included)
+  const onThisMac = ["localhost", "127.0.0.1"].includes(location.hostname) && location.port === "8766" && !REQUESTS;
   let watchPeer = null, watchCall = null, watchRoomCode = null, watchSlot = 0, watchTimer = null;
   const wv = $("watch-video");
 
@@ -2040,6 +2172,13 @@
       try {
         const res = await api("/history");
         if (res.ok && Array.isArray(res.body.items)) recentItems = res.body.items;
+        // A device opening Play Requests for the first time: the site from the last show watched.
+        if (REQUESTS && !$("url").value.trim()) {
+          const last = recentItems.find(it => it.site || it.show_url);
+          let site = last && last.site;
+          try { site = site || (last && new URL(last.show_url).origin + "/"); } catch (e) {}
+          if (site) { $("url").value = site; build(); }
+        }
       } catch (e) {}
       renderRecent();
       if (recentItems.length && Date.now() - exportAt > 30000) loadExport().catch(() => {});
@@ -2199,7 +2338,7 @@ My viewing history:`;
   // Opened (or reloaded) while this room is streaming: join it straight away, so the live
   // screen and Pause/Play are there without pressing Run again.
   (async () => {
-    if (onThisMac || location.protocol === "file:") return;
+    if (onThisMac || REQUESTS || location.protocol === "file:") return;
     const room = currentRoom || $("room").value.trim().toUpperCase();
     if (!room) return;
     let st = null, links = {};
