@@ -1166,6 +1166,8 @@
     watchPeer = watchCall = watchRoomCode = null;
     wv.srcObject = null;
     $("watch").hidden = true;
+    pb = null;
+    lockSync();
   }
 
   // Which way a connection's media goes: "lan" (same network: both ends' own addresses),
@@ -1326,6 +1328,7 @@
     if (!watchRoomCode) return;
     let np = {};
     try { np = (await api("/now-playing?room=" + encodeURIComponent(watchRoomCode))).body || {}; } catch (e) {}
+    lockNp = np;
     updatePlayback(np.playback);
     $("tv-notice").hidden = !np.notice;
     if (np.notice) $("tv-notice").textContent = np.notice.text;
@@ -1461,10 +1464,11 @@
   }
 
   function updatePlayback(report) {
-    if (!report || !report.duration) { pb = null; drawPlayback(); return; }
+    if (!report || !report.duration) { pb = null; drawPlayback(); lockSync(); return; }
     pb = { time: report.time, duration: report.duration, paused: report.paused, fullscreen: report.fullscreen,
            received: Date.now() };
     drawPlayback();
+    lockSync();
   }
   setInterval(drawPlayback, 500);
 
@@ -1540,6 +1544,80 @@
     drawPlayback();
     sendControl("seek", to);
   });
+
+
+  /* ---------- Lock screen controls ---------- */
+  // An iPhone shows a page's play controls on the lock screen (and in Control Center) only while
+  // the page is playing sound. So while a show is on, a silent sound loops here, started by a
+  // tap (the only time a page may start one), and the lock screen's buttons are passed to the
+  // Mac like the ones on this page: play, pause, 10 seconds back or ahead, and the scrubber.
+  let lockNp = {}, lockArmed = false, lockShown = "";
+  const lockAudio = new Audio(URL.createObjectURL((() => {
+    const rate = 8000, n = rate * 10, b = new DataView(new ArrayBuffer(44 + n));  // 10 s of 8-bit silence
+    const text = (at, str) => [...str].forEach((c, i) => b.setUint8(at + i, c.charCodeAt(0)));
+    text(0, "RIFF"); b.setUint32(4, 36 + n, true); text(8, "WAVEfmt "); b.setUint32(16, 16, true);
+    b.setUint16(20, 1, true); b.setUint16(22, 1, true); b.setUint32(24, rate, true); b.setUint32(28, rate, true);
+    b.setUint16(32, 1, true); b.setUint16(34, 8, true); text(36, "data"); b.setUint32(40, n, true);
+    for (let i = 0; i < n; i++) b.setUint8(44 + i, 128);
+    return new Blob([b], { type: "audio/wav" });
+  })()));
+  lockAudio.loop = true;
+  const lockOn = () => !!(watchRoomCode && pb);
+  function lockSync() {
+    const ms = navigator.mediaSession;
+    if (!lockOn()) {
+      if (!lockAudio.paused) lockAudio.pause();
+      if (ms && lockShown) { ms.metadata = null; lockShown = ""; }
+      return;
+    }
+    // The sound follows the show, so the lock screen's button shows Play or Pause to match.
+    if (pb.paused && !lockAudio.paused) lockAudio.pause();
+    else if (!pb.paused && lockAudio.paused && lockArmed) lockAudio.play().catch(() => {});
+    if (!ms) return;
+    const np = lockNp || {};
+    const live = recentItems.find(it => (it.live || []).includes(watchRoomCode));
+    const art = live && (live.saved_poster && !REMOTE ? live.saved_poster : remotePosters.get(live.id) || live.poster);
+    const name = (np.episodes || []).find(e => e[0] === np.episode);
+    const meta = { title: np.title || (live && live.title) || "Now playing",
+                   artist: np.season ? `Season ${np.season}` + (np.episode ? ` · Episode ${np.episode}` : "") + (name && name[1] ? ` · ${name[1]}` : "")
+                                     : "Room " + watchRoomCode,
+                   album: "Room " + watchRoomCode, art: art || "" };
+    const key = JSON.stringify(meta);
+    if (key !== lockShown && window.MediaMetadata) {
+      lockShown = key;
+      ms.metadata = new MediaMetadata({ title: meta.title, artist: meta.artist, album: meta.album,
+        artwork: meta.art ? [{ src: new URL(meta.art, location.href).href, sizes: "300x450" }] : [] });
+    }
+    try { ms.playbackState = pb.paused ? "paused" : "playing"; } catch (e) {}
+    try {
+      if (pb.duration) ms.setPositionState({ duration: pb.duration, position: Math.min(pbNow(), pb.duration), playbackRate: 1 });
+    } catch (e) {}
+  }
+  // The first tap while a show is on starts the silent sound (and so the lock screen controls).
+  const lockArm = () => {
+    if (lockArmed || !lockOn() || !document.documentElement.classList.contains("simple")) return;  // phones only
+    lockArmed = true;
+    if (!pb.paused) lockAudio.play().catch(() => { lockArmed = false; });
+  };
+  document.addEventListener("touchend", lockArm, { passive: true });
+  document.addEventListener("click", lockArm);
+  if (navigator.mediaSession) {
+    const ms = navigator.mediaSession;
+    const set = (action, fn) => { try { ms.setActionHandler(action, fn); } catch (e) {} };
+    const press = paused => {
+      if (!pb) { sendControl("toggle"); return; }
+      pb = { ...pb, time: pbNow(), paused, received: Date.now() };
+      if (paused) lockAudio.pause(); else lockAudio.play().catch(() => {});
+      drawPlayback();
+      lockSync();
+      sendControl(paused ? "pause" : "play");
+    };
+    set("play", () => press(false));
+    set("pause", () => press(true));
+    set("seekbackward", d => { seekTo(pbNow() - ((d && d.seekOffset) || 10)); lockSync(); });
+    set("seekforward", d => { seekTo(pbNow() + ((d && d.seekOffset) || 10)); lockSync(); });
+    set("seekto", d => { if (d && Number.isFinite(d.seekTime)) { seekTo(d.seekTime); lockSync(); } });
+  }
 
   $("np-server").addEventListener("change", async () => {
     const server = +$("np-server").value;
