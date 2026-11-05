@@ -1,0 +1,10 @@
+# The recorder's own data stays on this Mac (recordings, its Chrome logins, the guest passcode)
+recorder/recordings/
+recorder/chrome-profile/
+recorder/node_modules/
+recorder/guest.json
+recorder/config.json
+recorder/status.json
+recorder/status.json.*
+recorder/*.tmp
+.DS_Store

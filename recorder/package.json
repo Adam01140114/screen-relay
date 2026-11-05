@@ -1,0 +1,21 @@
+{
+  "name": "recording",
+  "version": "1.2.0",
+  "description": "Watches a playback log and records each room_link (video + audio) from its start entry until its stop entry, leaving out pauses, with a dashboard to browse and play the recordings.",
+  "main": "recorder.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node recorder.js",
+    "dashboard": "node dashboard.js",
+    "example": "node replay-example.js",
+    "autostart:on": "node autostart.js on",
+    "autostart:off": "node autostart.js off",
+    "autostart:restart": "node autostart.js restart",
+    "autostart:status": "node autostart.js status"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "puppeteer-core": "^25.16.0"
+  }
+}

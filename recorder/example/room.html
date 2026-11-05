@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test room</title>
+<style>
+  /* A stand-in "room" for the entries in log_example.json: it plays the title's
+     scene with a slow zoom, a running timecode and a beep every second (a higher
+     one every 10 s), so a recording of it has moving video and real audio. */
+  :root {
+    --fg: #f5f7fa; --muted: rgba(245, 247, 250, 0.72); --accent: #ffd27a;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --body: -apple-system, "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: #000; color: var(--fg); font: 16px/1.4 var(--body); overflow: hidden; cursor: default; }
+
+  .bg { position: absolute; inset: -4%; background: center / cover no-repeat; animation: drift 36s ease-in-out infinite alternate; }
+  .bg.fallback { background-image: linear-gradient(120deg, hsl(var(--h) 55% 22%), hsl(calc(var(--h) + 40) 60% 38%), hsl(calc(var(--h) + 80) 50% 20%)); background-size: 300% 300%; animation: drift 36s ease-in-out infinite alternate, pan 18s linear infinite alternate; }
+  @keyframes drift { from { transform: scale(1) translate(0, 0); } to { transform: scale(1.12) translate(-2.5%, 1.5%); } }
+  @keyframes pan { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+  .shade { position: absolute; inset: 0; background:
+    linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.35) 38%, rgba(0, 0, 0, 0) 62%),
+    linear-gradient(to right, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0) 55%); }
+
+  .top { position: absolute; top: 4.5vh; left: 4vw; right: 4vw; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .pill { display: inline-flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(8px); font: 600 13px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+  .pill b { color: var(--accent); font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #ff5a4a; box-shadow: 0 0 10px #ff5a4a; }
+
+  .info { position: absolute; left: 4vw; right: 4vw; bottom: 15vh; max-width: 62vw; }
+  .eyebrow { margin: 0 0 10px; font: 700 13px/1 var(--body); letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); }
+  h1 { margin: 0; font: 700 clamp(34px, 6.4vw, 84px)/1 var(--body); letter-spacing: -0.02em; text-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); }
+  h2 { margin: 12px 0 0; font: 400 clamp(18px, 2.4vw, 30px)/1.2 var(--body); color: var(--muted); }
+
+  .bar { position: absolute; left: 4vw; right: 4vw; bottom: 6vh; display: flex; align-items: center; gap: 18px; }
+  .time { font: 600 clamp(18px, 2.2vw, 28px)/1 var(--mono); font-variant-numeric: tabular-nums; min-width: 6.5ch; }
+  .track { position: relative; flex: 1; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.22); overflow: hidden; }
+  .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--fg); border-radius: 3px; }
+  .beat { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); opacity: 0.15; transition: opacity 0.12s ease-out; }
+  .beat.on { opacity: 1; transition: none; }
+  .beat.ten { background: #ff7a5c; }
+
+  .sound { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 14px 22px; border-radius: 999px; border: 0; background: rgba(0, 0, 0, 0.6); color: var(--fg); font: 600 16px var(--body); cursor: pointer; backdrop-filter: blur(8px); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="bg" id="bg"></div>
+<div class="shade"></div>
+<div class="top">
+  <span class="pill">Test room <b id="code">—</b></span>
+  <span class="pill"><span class="dot"></span><span id="clock">--:--:--</span></span>
+</div>
+<div class="info">
+  <p class="eyebrow" id="eyebrow"></p>
+  <h1 id="title">Test room</h1>
+  <h2 id="subtitle" hidden></h2>
+</div>
+<div class="bar">
+  <span class="time" id="time">0:00:00</span>
+  <div class="track"><div class="fill" id="fill"></div></div>
+  <span class="beat" id="beat"></span>
+</div>
+<button class="sound" id="sound" hidden>Click for sound</button>
+
+<script>
+  // Everything shown comes from the link: #tv=CODE&title=…&s=1&e=2&name=…
+  // The backdrop is <title as a slug>-scene.jpg next to this page, if there is one.
+  const $ = (id) => document.getElementById(id);
+
+  function show() {
+    const p = new URLSearchParams(location.hash.slice(1));
+    const title = p.get('title') || 'Test room';
+    const season = p.get('s'), episode = p.get('e'), name = p.get('name');
+    $('code').textContent = p.get('tv') || '—';
+    $('title').textContent = title;
+    $('eyebrow').textContent = season && episode ? `Season ${season} · Episode ${episode}` : p.has('title') ? 'Feature film' : '';
+    $('subtitle').textContent = name || '';
+    $('subtitle').hidden = !name;
+    document.title = [title, season && episode && `S${season.padStart(2, '0')}E${episode.padStart(2, '0')}`, p.get('tv') && `Room ${p.get('tv')}`].filter(Boolean).join(' · ');
+
+    const slug = title.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const bg = $('bg');
+    const img = new Image();
+    img.onload = () => { bg.classList.remove('fallback'); bg.style.backgroundImage = `url("${img.src}")`; };
+    img.onerror = () => {
+      let h = 0;
+      for (const ch of title) h = (h * 31 + ch.charCodeAt(0)) % 360;
+      bg.style.backgroundImage = '';
+      bg.style.setProperty('--h', h);
+      bg.classList.add('fallback');
+    };
+    img.src = `${slug}-scene.jpg`;
+  }
+  show();
+  addEventListener('hashchange', show);
+
+  // Beeps are scheduled on the audio clock; the picture follows that clock so
+  // the flash and the beep line up (handy for checking A/V sync in a recording).
+  const audio = new AudioContext();
+  const startAt = audio.currentTime + 0.1;
+  let nextBeat = 0;
+  function schedule() {
+    while (startAt + nextBeat < audio.currentTime + 0.5) {
+      const t = startAt + nextBeat;
+      const ten = nextBeat % 10 === 0;
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.frequency.value = ten ? 1320 : 880;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.18, t + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + (ten ? 0.18 : 0.07));
+      osc.connect(gain).connect(audio.destination);
+      osc.start(t);
+      osc.stop(t + 0.2);
+      nextBeat++;
+    }
+  }
+  setInterval(schedule, 100);
+  schedule();
+
+  const started = performance.now();
+  const pad = (n) => String(n).padStart(2, '0');
+  function frame() {
+    const running = audio.state === 'running';
+    const elapsed = running ? Math.max(0, audio.currentTime - startAt) : (performance.now() - started) / 1000;
+    const s = Math.floor(elapsed);
+    $('time').textContent = `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
+    $('fill').style.width = `${((elapsed % 60) / 60) * 100}%`;
+    $('beat').classList.toggle('on', elapsed % 1 < 0.08);
+    $('beat').classList.toggle('ten', s % 10 === 0);
+    $('clock').textContent = new Date().toLocaleTimeString('en-GB');
+    $('sound').hidden = running;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // Opened by hand (not by the recorder), browsers wait for a click before playing sound.
+  const unmute = () => audio.resume();
+  addEventListener('pointerdown', unmute);
+  addEventListener('keydown', unmute);
+</script>
+</body>
+</html>

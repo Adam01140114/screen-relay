@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#141414">
+  <meta name="color-scheme" content="dark">
+  <title>Recordings</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" data-nav aria-label="Recordings home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="9" />
+        <path d="M13 10.2v11.6a.9.9 0 0 0 1.37.77l9.3-5.8a.9.9 0 0 0 0-1.54l-9.3-5.8A.9.9 0 0 0 13 10.2Z" />
+      </svg>
+      <span>Recordings</span>
+    </a>
+    <label class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.6-3.6" /></svg>
+      <input id="search" type="search" placeholder="Search titles, episodes, dates" autocomplete="off"
+             spellcheck="false" aria-label="Search recordings">
+      <kbd aria-hidden="true">/</kbd>
+    </label>
+    <button class="add-btn" id="add-btn" type="button" aria-haspopup="dialog" title="Play something on the VCR" aria-label="Play something on the VCR">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+    </button>
+    <button class="status-pill" id="status-pill" type="button" aria-haspopup="dialog">
+      <i class="dot"></i><span id="status-text">Recorder</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></svg>
+    </button>
+  </header>
+
+  <main>
+    <section id="library-view" hidden>
+
+      <div class="toolbar">
+        <div class="chips" role="group" aria-label="Show">
+          <button class="chip" data-kind="tv" aria-pressed="false">TV <span></span></button>
+          <button class="chip" data-kind="movie" aria-pressed="false">Movies <span></span></button>
+          <button class="chip" data-kind="recording" aria-pressed="false">Currently Recording <span></span></button>
+        </div>
+      </div>
+
+      <section id="continue" class="shelf" hidden>
+        <h2>Continue watching</h2>
+        <div class="grid" id="continue-grid"></div>
+      </section>
+
+      <section class="shelf">
+        <h2 id="grid-title">All recordings</h2>
+        <div class="grid" id="grid"></div>
+        <div id="empty" class="empty" hidden></div>
+      </section>
+    </section>
+
+    <section id="watch-view" hidden>
+      <div class="ambient" id="ambient" aria-hidden="true"></div>
+      <a class="back" href="/" data-nav>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>
+        All recordings
+      </a>
+
+      <div id="w-main">
+        <div class="player" id="player">
+          <video id="video" controls playsinline preload="metadata"></video>
+          <div class="player-note" id="player-note" hidden></div>
+          <div class="endcard" id="endcard" hidden></div>
+        </div>
+        <div class="live-bar" id="live-bar" hidden>
+          <span id="live-badge"></span>
+          <p id="live-text"></p>
+          <button class="btn" id="live-catchup" type="button">Catch up</button>
+          <button class="btn danger" id="live-end" type="button">End</button>
+        </div>
+
+        <div class="details">
+          <div class="details-text">
+            <p class="eyebrow" id="w-eyebrow"></p>
+            <h1 id="w-title"></h1>
+            <p class="subtitle" id="w-subtitle"></p>
+            <ul class="facts" id="w-facts"></ul>
+          </div>
+          <div class="share">
+            <label for="w-link">Link to this recording</label>
+            <div class="link-row">
+              <input id="w-link" readonly>
+              <button class="btn primary" id="w-copy" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5" /><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" /></svg>
+                Copy
+              </button>
+            </div>
+            <div class="actions">
+              <a class="btn primary" id="w-room" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+                Watch
+              </a>
+              <button class="btn" id="w-restart" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+                Restart
+              </button>
+              <a class="btn" id="w-download">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11" /><path d="m7 10 5 5 5-5" /><path d="M5 20h14" /></svg>
+                Download
+              </a>
+              <button class="btn ghost" id="w-replay" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+                Replay
+              </button>
+              <button class="btn danger" id="w-delete" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <section class="shelf" id="w-more" hidden>
+          <h2 id="w-more-title"></h2>
+          <div class="grid" id="w-more-grid"></div>
+        </section>
+      </div>
+
+      <div class="empty" id="w-missing" hidden>
+        <h2>This recording isn't here anymore</h2>
+        <p>It may have been moved or deleted from the recordings folder.</p>
+        <a class="btn primary" href="/" data-nav>Browse recordings</a>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="sheet" id="vcr-add" aria-labelledby="va-title">
+    <div class="sheet-head">
+      <div>
+        <h2 id="va-title">Play on the VCR</h2>
+        <p class="sheet-status" id="va-status">Search for a show or movie. It plays in a new room, and gets recorded here.</p>
+      </div>
+      <button class="icon-btn" id="va-close" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
+    </div>
+    <form class="link-row" id="va-form">
+      <input id="va-input" type="search" enterkeyhint="search" autocomplete="off" spellcheck="false" placeholder="Example Show" aria-label="Show or movie">
+      <button class="btn primary" id="va-go" type="submit">Search</button>
+    </form>
+    <a class="btn va-open-vcr" id="va-open-vcr" target="_blank" rel="noopener">Open VCR Page</a>
+    <div id="va-results" class="va-results" hidden></div>
+    <figure class="va-preview" id="va-preview" hidden>
+      <img alt="What the Mac is showing in this room right now">
+      <figcaption>Live from the Mac</figcaption>
+    </figure>
+    <div id="va-done" class="va-done" hidden>
+      <a class="btn primary" id="va-watch" target="_blank" rel="noopener">Watch</a>
+      <a class="btn" id="va-vcr" target="_blank" rel="noopener">View VCR</a>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="storage" aria-labelledby="st-title">
+    <div class="sheet-head">
+      <div>
+        <h2 id="st-title">SD card</h2>
+        <p class="sheet-status">What's using the space, biggest first.</p>
+      </div>
+      <button class="icon-btn" id="st-close" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
+    </div>
+    <div id="st-summary"></div>
+    <div class="st-trash" id="st-trash" hidden>
+      <p class="hint" id="st-trash-text"></p>
+      <button class="btn danger" id="st-empty" type="button">Empty the card's Trash</button>
+    </div>
+    <div class="st-list" id="st-list"></div>
+  </dialog>
+
+  <dialog class="sheet" id="settings" aria-labelledby="settings-title">
+    <div class="sheet-head">
+      <div>
+        <h2 id="settings-title">Recorder settings</h2>
+        <p class="sheet-status" id="s-status"></p>
+      </div>
+      <button class="icon-btn" id="s-close" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
+    </div>
+
+    <label class="field-label" for="s-log">JSON log to watch for recording triggers</label>
+    <div class="link-row">
+      <input id="s-log" spellcheck="false" autocomplete="off" placeholder="~/Desktop/log_example.json">
+      <button class="btn primary" id="s-save" type="button">Save</button>
+    </div>
+    <p class="hint" id="s-file-info"></p>
+
+    <details class="preview-box fold" id="s-space-box">
+      <summary class="preview-head">
+        <span class="field-label">Space left</span>
+        <span class="hint" id="s-space-info"></span>
+      </summary>
+      <div class="fold-body" id="s-space"></div>
+    </details>
+
+    <details class="preview-box" id="s-preview-box">
+      <summary class="preview-head">
+        <span class="field-label">What the recorder is reading</span>
+        <span class="hint" id="s-preview-info"></span>
+      </summary>
+      <textarea class="log-preview" id="s-preview" readonly spellcheck="false" wrap="off" aria-label="What the recorder is reading"></textarea>
+    </details>
+
+    <details class="preview-box fold" id="s-suggest-wrap" hidden>
+      <summary class="preview-head">
+        <span class="field-label">JSON files nearby</span>
+        <span class="hint" id="s-suggest-info"></span>
+      </summary>
+      <div class="fold-body"><div class="suggestions" id="s-suggestions"></div></div>
+    </details>
+
+    <div class="sheet-foot sheet-buttons">
+      <button class="btn" id="s-diagnostics" type="button">Copy diagnostics</button>
+      <button class="btn danger" id="s-logout" type="button" hidden>Log out</button>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
