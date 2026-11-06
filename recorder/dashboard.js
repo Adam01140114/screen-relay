@@ -1388,12 +1388,30 @@ async function compressOne(id, job) {
   job.state = 'checking';
   const dead = (await deadAir(original)).map(([from, to]) => [from, Math.min(to, length || to)]);
   const cut = dead.reduce((sum, [from, to]) => sum + (to - from), 0);
-  const keep = dead.length ? `not(${dead.map(([from, to]) => `between(t,${from.toFixed(2)},${to.toFixed(2)})`).join('+')})` : null;
+  // The pieces in between, cut out and joined (by time, so a variable frame rate comes out right).
+  const audio = (await run('ffprobe', ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=index',
+    '-of', 'csv=p=0', original])).stdout.trim() !== '';
+  let join = null;
+  if (dead.length) {
+    const pieces = [];
+    let at = 0;
+    for (const [from, to] of dead) {
+      pieces.push([at, from]);
+      at = to;
+    }
+    pieces.push([at, null]);
+    const parts = pieces.map(([from, to], i) => {
+      const range = `start=${from.toFixed(2)}${to == null ? '' : `:end=${to.toFixed(2)}`}`;
+      return `[0:v:0]trim=${range},setpts=PTS-STARTPTS[v${i}]`
+        + (audio ? `;[0:a:0]atrim=${range},asetpts=PTS-STARTPTS[a${i}]` : '');
+    });
+    const inputs = pieces.map((_, i) => `[v${i}]` + (audio ? `[a${i}]` : '')).join('');
+    join = `${parts.join(';')};${inputs}concat=n=${pieces.length}:v=1:a=${audio ? 1 : 0}[v]` + (audio ? '[a]' : '');
+  }
   job.state = 'compressing';
   const code = await new Promise((resolve) => {
     const proc = spawn('ffmpeg', ['-nostdin', '-v', 'error', '-y', '-progress', 'pipe:1', '-i', original,
-      '-map', '0:v:0', '-map', '0:a:0?',
-      ...(keep ? ['-vf', `select='${keep}',setpts=N/FRAME_RATE/TB`, '-af', `aselect='${keep}',asetpts=N/SR/TB`] : []),
+      ...(join ? ['-filter_complex', join, '-map', '[v]', ...(audio ? ['-map', '[a]'] : [])] : ['-map', '0:v:0', '-map', '0:a:0?']),
       '-c:v', 'hevc_videotoolbox', '-b:v', '1800k', '-tag:v', 'hvc1',
       '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', tmp], { stdio: ['ignore', 'pipe', 'ignore'] });
     proc.stdout.on('data', (chunk) => {
