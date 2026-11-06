@@ -32,6 +32,7 @@ const state = {
 
 const video = $('#video');
 let currentId = null;
+let shownId = null; // the recording on the watch page, live view or not
 let endTimer = null;
 let libraryUrl = '/'; // where "All recordings" goes back to (keeps your search)
 
@@ -521,6 +522,7 @@ function renderLibrary() {
 
 function renderWatch(id) {
   const item = state.items.find((it) => it.id === id);
+  shownId = id;
   $('#w-missing').hidden = Boolean(item) || !state.loaded;
   $('#w-main').hidden = !item;
   if (!item) {
@@ -711,10 +713,10 @@ $('#live-catchup').addEventListener('click', catchUp);
 // End: stops what's being recorded on the VCR (its room) and takes it out of the VCR's
 // History; with its play gone from the log, the recorder drops the recording too.
 $('#live-end').addEventListener('click', async () => {
-  const item = state.items.find((it) => it.id === currentId);
+  const item = state.items.find((it) => it.id === shownId);
   if (!item) return;
   const name = [item.title, episodeCode(item), item.episodeName].filter(Boolean).join(' ');
-  if (!confirm(`End ${name}?\n\nIt stops playing on the VCR${item.room ? ` (room ${item.room})` : ''} on every screen, and it's taken out of History and Recordings.`)) return;
+  if (!confirm(`End ${name}?\n\nIt stops playing on the VCR${item.room ? ` (room ${item.room})` : ''} on every screen, and it's taken out of History and Recordings.${item.room ? ' If every episode of the show is being recorded, that stops too.' : ''}`)) return;
   $('#live-end').disabled = true;
   try {
     const res = await fetch('/api/end', {

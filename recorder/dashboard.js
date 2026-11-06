@@ -863,6 +863,12 @@ async function endRecording(req, res) {
     const r = await vcr('/stop', { room: item.room, forget: true });
     if (r.status !== 200) return sendJson(res, { error: r.body.error ?? 'The VCR refused it.' }, 502);
     console.log(`Ended room ${item.room} (${item.title} ${item.date} ${item.time}) from Recordings`);
+    // Ending an episode of a show being recorded whole stops that too, or it'd just ask for the next one.
+    if (wholeShows[item.title]) {
+      delete wholeShows[item.title];
+      saveWhole();
+      console.log(`Stopped recording every episode of ${item.title} (ended from Recordings)`);
+    }
     return sendJson(res, { ok: true, room: item.room });
   } catch {
     return sendJson(res, { error: 'Can\'t reach the VCR on the Mac.' }, 502);
