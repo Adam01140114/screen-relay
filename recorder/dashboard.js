@@ -998,7 +998,7 @@ function showCatalog() {
     const seasons = (show.seasons ?? []).map(([n]) => n).filter((n) => Number.isFinite(n));
     if (needsLookup(show)) needed.push(url);
     const lookup = lookups.state.get(url);
-    out[title] = { seasons, episodes, poster: showPosters(readLibrary(opts.dir))(title),
+    out[title] = { url, seasons, episodes, poster: showPosters(readLibrary(opts.dir))(title),
       looking: needed.includes(url) && !lookup?.failed, lookupFailed: Boolean(lookup?.failed) };
     if (wholeShows[title]) {
       const p = wholeShowProgress(title, out);
@@ -1105,7 +1105,7 @@ function wholeShowProgress(title, catalog = showCatalog(), recordings = readLibr
     if (it.title !== title || it.kind !== 'tv' || it.season == null || it.episode == null) continue;
     const key = `${it.season}|${it.episode}`;
     // Recorded: saved (or saving) and not just a few minutes of it (an episode cut short).
-    if ((it.status === 'saved' && (it.duration ?? 0) >= 300) || it.status === 'saving') saved.add(key);
+    if ((it.status === 'saved' && (it.duration ?? 0) >= 300 && !it.incomplete) || it.status === 'saving') saved.add(key);
     else if (it.status === 'recording' || it.status === 'paused') going.set(key, it);
   }
   const skipped = new Set(want?.skipped ?? []);
@@ -1209,7 +1209,8 @@ async function wholeShowTick() {
       try {
         want.room ??= await freeVcrRoom(); // its own room; a new request there replaces what it was playing
         if (!want.room) continue;
-        const run = await vcr('/replay', { title, season, episode, room: want.room });
+        // Its page too, for a show that isn't (or is no longer) in the VCR's Recent Activity.
+        const run = await vcr('/replay', { title, season, episode, room: want.room, url: catalog[title]?.url });
         if (run.status !== 200) throw new Error(run.body.error ?? `VCR said ${run.status}`);
         Object.assign(want, { asked: `${season}|${episode}`, requestedAt: new Date().toISOString() });
         console.log(`Whole show: ${title} S${season}E${episode} in room ${want.room}`);

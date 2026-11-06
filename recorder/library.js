@@ -289,6 +289,7 @@ function readLibrary(dir) {
       frame: meta.frame && fs.existsSync(path.join(thumbsDir, meta.frame)) ? meta.frame : null, // a frame from halfway through
       file: meta.status === 'saved' ? meta.file : null,
       compressed: Boolean(meta.compressed), // re-encoded smaller from the Storage window
+      incomplete: Boolean(meta.incomplete), // the episode broke off partway (black after), so it's recorded again
       log: meta.log ?? null,
       raw,
       pauses: pauses.length,
