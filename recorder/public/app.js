@@ -494,7 +494,24 @@ function renderWatch(id) {
 
   // Player: only touch the video when the recording itself changes.
   const note = $('#player-note');
-  if (watchable(item)) {
+  // Still recording in a room: what the room's TV link is showing right now, live, instead of
+  // what's been recorded so far. Once it's saved, the recording plays here as usual.
+  const liveView = $('#live-view');
+  const roomLive = isRecording(item) && item.room ? roomWatchLink(item.room, item.url) : '';
+  liveView.hidden = !roomLive;
+  video.hidden = Boolean(roomLive);
+  if (roomLive) {
+    stopVideo();
+    note.hidden = true;
+    if (liveView.dataset.src !== roomLive) liveView.src = liveView.dataset.src = roomLive;
+    renderLiveBar(item);
+  } else if (liveView.dataset.src) {
+    liveView.src = 'about:blank';
+    liveView.dataset.src = '';
+  }
+  if (roomLive) {
+    // (the room's live view, above)
+  } else if (watchable(item)) {
     note.hidden = true;
     if (currentId !== item.id) {
       currentId = item.id;
@@ -638,12 +655,14 @@ function renderLiveBar(item) {
   if (!item.live) return;
   const so = Number.isFinite(video.duration) && video.duration > 0 ? ` (${clock(video.duration)} so far)` : '';
   setHtml($('#live-badge'), item.status === 'saving' ? '<span class="badge saving"><i></i>Saving</span>' : liveBadge(item));
-  $('#live-text').textContent = item.status === 'paused'
+  $('#live-text').textContent = !$('#live-view').hidden
+    ? `Live from room ${item.room}: what its TV link is showing right now. Once it's saved, the recording plays here.`
+    : item.status === 'paused'
     ? `The show is paused. You're watching everything recorded before the pause${so}; it continues in this same recording when the show plays again.`
     : item.status === 'saving'
     ? `It's finished and being saved. You're watching it as it was${so}; the saved file takes over in a moment.`
     : `Still recording${so}. When you reach the end, what's been recorded since loads and keeps playing.`;
-  $('#live-catchup').hidden = item.status === 'saving';
+  $('#live-catchup').hidden = item.status === 'saving' || !$('#live-view').hidden; // the live view is always caught up
   $('#live-end').hidden = item.status === 'saving' || !item.room;
 }
 $('#live-catchup').addEventListener('click', catchUp);
