@@ -1522,7 +1522,7 @@ async function loadStorage() {
     const data = await (await fetch('/api/storage', { cache: 'no-store' })).json();
     renderStorage(data);
     // Faster while something is compressing, so its progress moves.
-    const busy = data.items.some((it) => ['queued', 'compressing', 'saving'].includes(it.job?.state));
+    const busy = data.items.some((it) => ['queued', 'checking', 'compressing', 'saving'].includes(it.job?.state));
     storageTimer = setTimeout(loadStorage, busy ? 1500 : 5000);
   } catch {
     storageTimer = setTimeout(loadStorage, 5000);
@@ -1549,10 +1549,10 @@ function renderStorage(data) {
   const biggest = Math.max(1, ...data.items.map((it) => it.size));
   setHtml($('#st-list'), data.items.map((it) => {
     const job = it.job;
-    const working = job && ['queued', 'compressing', 'saving'].includes(job.state);
+    const working = job && ['queued', 'checking', 'compressing', 'saving'].includes(job.state);
     const sub = [episodeCode(it), it.episodeName].filter(Boolean).join(' · ') || (it.kind === 'movie' ? 'Movie' : '');
     const state = working
-      ? `<span class="st-job">${job.state === 'queued' ? 'Waiting to compress…' : job.state === 'saving' ? 'Saving the smaller copy…'
+      ? `<span class="st-job">${job.state === 'queued' ? 'Waiting to compress…' : job.state === 'checking' ? 'Checking for frozen stretches…' : job.state === 'saving' ? 'Saving the smaller copy…'
           : `Compressing ${Math.round((job.progress || 0) * 100)}%`}</span><span class="st-progress"><i style="width:${Math.round((job.progress || 0) * 100)}%"></i></span>`
       : job?.state === 'failed' ? `<span class="st-job bad">Couldn't compress: ${esc(job.error || 'it failed')}</span>`
       : job?.state === 'done' ? `<span class="st-job ok">Compressed, ${sizeText(job.saved || 0)} freed</span>`

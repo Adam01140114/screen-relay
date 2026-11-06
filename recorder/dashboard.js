@@ -1172,6 +1172,8 @@ async function wholeShowTick() {
           want.done = new Date().toISOString();
           saveWhole();
           console.log(`Every episode of ${title} is recorded`);
+          // Its room would play on into episodes it already has: ended (kept for any new ones).
+          if (want.room) await vcr('/stop', { room: want.room }).catch(() => {});
         }
         continue;
       }
@@ -1320,7 +1322,7 @@ async function compressRequest(req, res) {
   if (!item) return sendJson(res, { error: 'That recording isn\'t here any more.' }, 404);
   if (item.compressed) return sendJson(res, { error: 'It\'s already compressed.' }, 409);
   const job = compressJobs.get(id);
-  if (job && ['queued', 'compressing', 'saving'].includes(job.state)) return sendJson(res, { ok: true, job });
+  if (job && ['queued', 'checking', 'compressing', 'saving'].includes(job.state)) return sendJson(res, { ok: true, job });
   compressJobs.set(id, { state: 'queued', progress: 0 });
   runCompressQueue().catch((err) => console.error(err));
   return sendJson(res, { ok: true, job: compressJobs.get(id) });
@@ -1346,6 +1348,36 @@ async function runCompressQueue() {
   }
 }
 
+// Stretches where the stream died but recording went on: the picture frozen (or black) and the
+// sound silent together for 20 seconds or more. Both, so a real still scene with talking stays.
+// Each is kept to its first second. [[from, to], ...] in seconds.
+async function deadAir(file) {
+  const out = await new Promise((resolve) => {
+    let text = '';
+    const proc = spawn('ffmpeg', ['-nostdin', '-v', 'info', '-i', file,
+      '-vf', 'fps=2,scale=160:-2,freezedetect=n=0.003:d=20', '-af', 'silencedetect=n=-50dB:d=20',
+      '-f', 'null', '-'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    proc.stderr.on('data', (chunk) => { text += chunk; });
+    proc.on('exit', () => resolve(text));
+    proc.on('error', () => resolve(''));
+  });
+  const spans = (startRe, endRe) => {
+    const starts = [...out.matchAll(startRe)].map((m) => Number(m[1]));
+    const ends = [...out.matchAll(endRe)].map((m) => Number(m[1]));
+    return starts.map((from, i) => [from, ends[i] ?? Infinity]);
+  };
+  const frozen = spans(/freeze_start: ([\d.]+)/g, /freeze_end: ([\d.]+)/g);
+  const silent = spans(/silence_start: ([\d.]+)/g, /silence_end: ([\d.]+)/g);
+  const both = [];
+  for (const [a, b] of frozen) {
+    for (const [c, d] of silent) {
+      const from = Math.max(a, c) + 1, to = Math.min(b, d);
+      if (to - from >= 19) both.push([from, to]);
+    }
+  }
+  return both.sort((x, y) => x[0] - y[0]);
+}
+
 async function compressOne(id, job) {
   const item = readLibrary(opts.dir).find((it) => it.id === id && it.status === 'saved');
   if (!item) throw new Error('it isn\'t here any more');
@@ -1353,14 +1385,20 @@ async function compressOne(id, job) {
   const before = fs.statSync(original).size;
   const length = (await probeVideo(original)).duration || item.duration || 0;
   const tmp = path.join(os.tmpdir(), `recording-compress-${id}.mp4`);
+  job.state = 'checking';
+  const dead = (await deadAir(original)).map(([from, to]) => [from, Math.min(to, length || to)]);
+  const cut = dead.reduce((sum, [from, to]) => sum + (to - from), 0);
+  const keep = dead.length ? `not(${dead.map(([from, to]) => `between(t,${from.toFixed(2)},${to.toFixed(2)})`).join('+')})` : null;
   job.state = 'compressing';
   const code = await new Promise((resolve) => {
     const proc = spawn('ffmpeg', ['-nostdin', '-v', 'error', '-y', '-progress', 'pipe:1', '-i', original,
-      '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'hevc_videotoolbox', '-b:v', '1800k', '-tag:v', 'hvc1',
+      '-map', '0:v:0', '-map', '0:a:0?',
+      ...(keep ? ['-vf', `select='${keep}',setpts=N/FRAME_RATE/TB`, '-af', `aselect='${keep}',asetpts=N/SR/TB`] : []),
+      '-c:v', 'hevc_videotoolbox', '-b:v', '1800k', '-tag:v', 'hvc1',
       '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', tmp], { stdio: ['ignore', 'pipe', 'ignore'] });
     proc.stdout.on('data', (chunk) => {
       const us = /out_time_us=(\d+)/.exec(String(chunk))?.[1];
-      if (us && length) job.progress = Math.min(0.99, Number(us) / 1e6 / length);
+      if (us && length) job.progress = Math.min(0.99, Number(us) / 1e6 / (length - cut));
     });
     proc.on('exit', resolve);
     proc.on('error', () => resolve(-1));
@@ -1369,7 +1407,7 @@ async function compressOne(id, job) {
     if (code !== 0) throw new Error('the encoder stopped');
     const after = fs.statSync(tmp).size;
     const made = (await probeVideo(tmp)).duration || 0;
-    if (length && Math.abs(made - length) > 3) throw new Error('the smaller copy came out the wrong length');
+    if (length && Math.abs(made - (length - cut)) > 3 + dead.length) throw new Error('the smaller copy came out the wrong length');
     if (after >= before) throw new Error('it didn\'t get any smaller');
     job.state = 'saving';
     // Into place: copied next to the original in pieces (the card's ExFAT), checked, then swapped in.
@@ -1378,9 +1416,11 @@ async function compressOne(id, job) {
     fs.renameSync(`${original}.part`, original);
     const sidecar = path.join(opts.dir, `${item.file.replace(/\.[^.]+$/, '')}.json`);
     const meta = readJson(sidecar);
-    if (meta) writeJsonFile(sidecar, { ...meta, compressed: true, compressed_at: new Date().toISOString(), size_before: before });
+    if (meta) writeJsonFile(sidecar, { ...meta, compressed: true, compressed_at: new Date().toISOString(), size_before: before,
+      ...(cut ? { duration: made, dead_air_cut: Math.round(cut) } : {}) });
     Object.assign(job, { state: 'done', progress: 1, saved: before - after });
-    console.log(`Compressed ${item.file}: ${(before / 1e9).toFixed(2)} GB -> ${(after / 1e9).toFixed(2)} GB`);
+    console.log(`Compressed ${item.file}: ${(before / 1e9).toFixed(2)} GB -> ${(after / 1e9).toFixed(2)} GB`
+      + (cut ? `, cut ${Math.round(cut)}s where the stream had frozen` : ''));
   } finally {
     fs.rmSync(tmp, { force: true });
     fs.rmSync(`${original}.part`, { force: true });
