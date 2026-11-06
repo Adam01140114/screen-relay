@@ -567,6 +567,11 @@ button.card-link { width: 100%; padding: 0; color: inherit; font: inherit; text-
   border: 1px solid var(--line);
   border-radius: 14px;
 }
+.whole-bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 12px 14px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 14px; }
+.whole-bar p { flex: 1; margin: 0; font-size: 14px; color: var(--muted); }
+.whole-bar .btn { flex: none; }
+@media (max-width: 600px) { .whole-bar { flex-wrap: wrap; } .whole-bar p { flex-basis: 100%; } .whole-bar .btn { width: 100%; justify-content: center; } }
 .live-bar .badge { position: static; flex: none; font-size: 13px; padding: 5px 10px; }
 .live-bar p { flex: 1; margin: 0; font-size: 14px; color: var(--muted); }
 .live-bar .btn { flex: none; }

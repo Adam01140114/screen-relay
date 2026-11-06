@@ -312,14 +312,55 @@ function showCard(title, episodes, opened) {
   const known = state.catalog[title];
   for (const season of known?.seasons ?? []) if (!seasons.has(season)) seasons.set(season, []);
   const allSeasons = [...seasons].sort(([a], [b]) => (a ?? 1e9) - (b ?? 1e9));
-  const panel = allSeasons.map(([season, eps]) => seasonCard(title, season, eps, opened)).join('');
+  const panel = wholeBar(title) + allSeasons.map(([season, eps]) => seasonCard(title, season, eps, opened)).join('');
   const recordedSeasons = [...seasons.values()].filter((eps) => eps.length).length;
   return groupCard({
     kind: 'show', key: title, open, lead: episodes[0], name: title, sub, // episodes[0]: first in the chosen sort
-    badge: known ? `${recordedSeasons} of ${plural(seasons.size, 'season')}` : plural(seasons.size, 'season'), live: episodes,
+    badge: known?.whole && !known.whole.done ? `Recording all · ${known.whole.recorded} of ${known.whole.total}`
+      : known ? `${recordedSeasons} of ${plural(seasons.size, 'season')}` : plural(seasons.size, 'season'), live: episodes,
     panel: open && `<div class="episodes" role="group" aria-label="${esc(title)} seasons">${panel}</div>`,
   });
 }
+
+// Record every episode: the show's button, or how far it's got (with Stop).
+function wholeBar(title) {
+  const known = state.catalog[title];
+  if (!known) return '';
+  const w = known.whole;
+  const code = (p) => (p ? `S${String(p[0]).padStart(2, '0')}E${String(p[1]).padStart(2, '0')}` : '');
+  const data = esc(JSON.stringify({ title }));
+  if (!w) {
+    return `<div class="whole-bar"><p>Record every episode of every season, one after another, until none are missing.</p>
+      <button class="btn primary" type="button" data-whole="${data}">Request all</button></div>`;
+  }
+  const text = w.done ? `Every episode is recorded (${w.recorded} of ${w.total}${w.skipped ? `; ${w.skipped} wouldn't play` : ''}).`
+    : `${w.recorded} of ${w.total} recorded · ${w.left} to go${w.skipped ? ` · ${w.skipped} wouldn't play` : ''}. `
+      + (w.waiting === 'space' ? 'Paused: the SD card has under 20 GB free.'
+        : [w.now && `Recording ${code(w.now)} in room ${w.room}.`, w.next && `Next: ${code(w.next)}.`].filter(Boolean).join(' '));
+  return `<div class="whole-bar"><p>${esc(text)}</p>
+    <button class="btn danger" type="button" data-whole="${data}" data-whole-stop="1">${w.done ? 'Stop watching for new' : 'Stop'}</button></div>`;
+}
+
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-whole]');
+  if (!button) return;
+  const { title } = JSON.parse(button.dataset.whole);
+  const stop = Boolean(button.dataset.wholeStop);
+  if (stop && !confirm(`Stop recording every episode of ${title}? What's already recorded stays.`)) return;
+  button.disabled = true;
+  try {
+    const res = await fetch('/api/whole-show', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, stop }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(data.error ?? 'Couldn\'t do that.');
+    toast(stop ? `Stopped recording all of ${title}.` : `Recording every episode of ${title}, one after another.`);
+    catalogAt = 0;
+    loadCatalog();
+  } catch {
+    toast('Couldn\'t reach the dashboard server.');
+  } finally {
+    button.disabled = false;
+  }
+});
 
 function seasonCard(title, season, episodes, opened) {
   const key = `${title}|${season ?? ''}`;
@@ -1586,7 +1627,7 @@ $('#st-empty').addEventListener('click', async () => {
 let catalogAt = 0;
 async function loadCatalog() {
   // Every few seconds while a show's episodes are being looked up, so they show as they're found.
-  const looking = Object.values(state.catalog).some((show) => show.looking);
+  const looking = Object.values(state.catalog).some((show) => show.looking || (show.whole && !show.whole.done));
   if (Date.now() - catalogAt < (looking ? 4_000 : 60_000)) return;
   catalogAt = Date.now();
   try {

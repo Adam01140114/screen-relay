@@ -153,6 +153,7 @@ async function handle(req, res, { guest = false } = {}) {
   if (pathname === '/api/storage') return sendJson(res, storageBreakdown());
   if (pathname === '/api/catalog') return sendJson(res, showCatalog());
   if (pathname === '/api/vcr/episode' && req.method === 'POST') return requestEpisode(req, res);
+  if (pathname === '/api/whole-show' && req.method === 'POST') return wholeShowRequest(req, res);
   if (pathname === '/api/storage/compress' && req.method === 'POST') return compressRequest(req, res);
   if (pathname === '/api/storage/empty-trash' && req.method === 'POST') return emptyCardTrash(req, res);
   if (pathname === '/api/storage/empty-mac-trash' && req.method === 'POST') return emptyMacTrash(req, res);
@@ -321,7 +322,12 @@ function livePreview(id, raw, at) {
 const HLS_DIR = path.join(os.tmpdir(), 'recording-dashboard-hls');
 const streams = new Map(); // recording id -> { proc, dir, ended }
 const starting = new Set();
-fs.rmSync(HLS_DIR, { recursive: true, force: true });
+try {
+  // Leftovers from the last run (its encoders may still be writing a last segment or two).
+  fs.rmSync(HLS_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+} catch (err) {
+  console.error(`Couldn't clear old live copies: ${err.message}`);
+}
 
 async function ensureStream(item) {
   const known = streams.get(item.id);
@@ -994,6 +1000,14 @@ function showCatalog() {
     const lookup = lookups.state.get(url);
     out[title] = { seasons, episodes, poster: showPosters(readLibrary(opts.dir))(title),
       looking: needed.includes(url) && !lookup?.failed, lookupFailed: Boolean(lookup?.failed) };
+    if (wholeShows[title]) {
+      const p = wholeShowProgress(title, out);
+      const want = wholeShows[title];
+      out[title].whole = { recorded: p.recorded, total: p.total, left: p.missing.length, skipped: p.skipped.length,
+        done: Boolean(want.done), waiting: want.waiting ?? null, room: want.room ?? null,
+        next: p.missing.find(([s, e]) => !p.going.has(`${s}|${e}`)) ?? null, asked: want.asked ?? null,
+        now: [...p.going.values()].filter((it) => it.room === want.room).map((it) => [it.season, it.episode])[0] ?? null };
+    }
   }
   lookUpEpisodes(needed);
   return out;
@@ -1011,9 +1025,11 @@ const lookups = { running: null, state: new Map() }; // show url -> {at, failed}
 function needsLookup(show) {
   const seasons = (show.seasons ?? []).map(([n]) => n).filter((n) => Number.isFinite(n));
   if (!seasons.length) return true;
+  // Read in full before ({at, count}) and its saved list still has every one of them.
   const whole = show.whole ?? {};
+  const isWhole = (n) => typeof whole[n] === 'object' && (show.episodes?.[n]?.length ?? 0) >= whole[n].count;
   const latest = Math.max(...seasons);
-  return seasons.some((n) => !whole[n]) || Date.now() / 1000 - whole[latest] > 24 * 3600;
+  return seasons.some((n) => !isWhole(n)) || Date.now() / 1000 - (whole[latest]?.at ?? 0) > 24 * 3600;
 }
 function lookUpEpisodes(urls) {
   if (lookups.running || !fs.existsSync(LOOKUP_SCRIPT)) return;
@@ -1063,6 +1079,151 @@ async function requestEpisode(req, res) {
     return sendJson(res, { error: 'Can\'t reach the VCR on the Mac.' }, 502);
   }
 }
+
+// Whole shows: "Record every episode" keeps one room of its own playing the show's missing
+// episodes, in order, until every episode the site lists has a recording. The room carries on
+// to the next episode by itself; when that one's already recorded, it's sent to the next
+// missing one instead. An episode that won't play after 3 tries is skipped (and shown as such).
+// Two shows at a time; others wait their turn. New episodes stop starting while the SD card has
+// less than 20 GB free. What's recorded this way is compressed once saved, so whole shows fit.
+// State in recordings/whole-shows.json: {title: {room, since, tries: {"s|e": n}, skipped: ["s|e"], requestedAt, asked}}.
+const WHOLE_FILE = path.join(opts.dir, 'whole-shows.json');
+const WHOLE_AT_ONCE = 2;
+const WHOLE_MIN_FREE = 20e9;
+let wholeShows = readJson(WHOLE_FILE) ?? {};
+const saveWhole = () => writeJson(WHOLE_FILE, wholeShows);
+
+function wholeShowProgress(title, catalog = showCatalog(), recordings = readLibrary(opts.dir)) {
+  const show = catalog[title];
+  const want = wholeShows[title];
+  const all = [];
+  for (const season of [...(show?.seasons ?? [])].sort((a, b) => a - b)) {
+    for (const [n] of [...(show.episodes?.[season] ?? [])].sort(([a], [b]) => a - b)) all.push([season, n]);
+  }
+  const saved = new Set(), going = new Map();
+  for (const it of recordings) {
+    if (it.title !== title || it.kind !== 'tv' || it.season == null || it.episode == null) continue;
+    const key = `${it.season}|${it.episode}`;
+    // Recorded: saved (or saving) and not just a few minutes of it (an episode cut short).
+    if ((it.status === 'saved' && (it.duration ?? 0) >= 300) || it.status === 'saving') saved.add(key);
+    else if (it.status === 'recording' || it.status === 'paused') going.set(key, it);
+  }
+  const skipped = new Set(want?.skipped ?? []);
+  const missing = all.filter(([s, e]) => !saved.has(`${s}|${e}`) && !skipped.has(`${s}|${e}`));
+  return { total: all.length, recorded: all.filter(([s, e]) => saved.has(`${s}|${e}`)).length, missing, saved, going,
+    skipped: [...skipped], known: all.length > 0 };
+}
+
+async function wholeShowRequest(req, res) {
+  if (!fromHomeDevice(req)) return sendJson(res, { error: 'Requests can only be made from this page.' }, 403);
+  let body;
+  try {
+    body = await readBody(req);
+  } catch {
+    return sendJson(res, { error: 'Expected JSON.' }, 400);
+  }
+  const title = String(body.title ?? '').trim();
+  if (!title || !showCatalog()[title]) return sendJson(res, { error: 'That show isn\'t here.' }, 404);
+  if (body.stop) {
+    const want = wholeShows[title];
+    delete wholeShows[title];
+    saveWhole();
+    // Its room stops too, unless it's partway through an episode (that one finishes and saves).
+    if (want?.room && !readLibrary(opts.dir).some((it) => it.room === want.room && isRecordingStatus(it))) {
+      vcr('/stop', { room: want.room }).catch(() => {});
+    }
+    console.log(`Stopped recording every episode of ${title}`);
+    return sendJson(res, { ok: true });
+  }
+  wholeShows[title] ??= { since: new Date().toISOString(), tries: {}, skipped: [] };
+  saveWhole();
+  console.log(`Recording every episode of ${title}`);
+  wholeShowTick().catch((err) => console.error(err));
+  return sendJson(res, { ok: true });
+}
+const isRecordingStatus = (it) => it.status === 'recording' || it.status === 'paused';
+
+let wholeTicking = false;
+async function wholeShowTick() {
+  if (wholeTicking || !Object.keys(wholeShows).length) return;
+  wholeTicking = true;
+  try {
+    const catalog = showCatalog();
+    const recordings = readLibrary(opts.dir);
+    let free = Infinity;
+    try {
+      const st = fs.statfsSync(CARD_DIR);
+      free = st.bavail * st.bsize;
+    } catch {}
+    let active = 0;
+    for (const [title, want] of Object.entries(wholeShows)) {
+      const p = wholeShowProgress(title, catalog, recordings);
+      if (!p.known) continue; // its episodes are still being looked up
+      // Compress what this has recorded, once saved (on the card or not).
+      for (const it of recordings) {
+        if (it.title === title && it.status === 'saved' && !it.compressed && !compressJobs.has(it.id)
+            && Date.parse(it.startedAt ?? 0) >= Date.parse(want.since)) {
+          compressJobs.set(it.id, { state: 'queued', progress: 0, auto: true });
+          runCompressQueue().catch((err) => console.error(err));
+        }
+      }
+      if (!p.missing.length) {
+        if (!want.done) {
+          want.done = new Date().toISOString();
+          saveWhole();
+          console.log(`Every episode of ${title} is recorded`);
+        }
+        continue;
+      }
+      want.done = null;
+      const inRoom = want.room ? recordings.find((it) => it.room === want.room && isRecordingStatus(it)) : null;
+      if (inRoom && inRoom.title === title && !p.saved.has(`${inRoom.season}|${inRoom.episode}`)) {
+        // Recording one it needs. It counts as played once it's going.
+        want.asked = null;
+        active++;
+        continue;
+      }
+      if (active >= WHOLE_AT_ONCE) continue; // waiting its turn
+      if (free < WHOLE_MIN_FREE) {
+        want.waiting = 'space';
+        continue;
+      }
+      want.waiting = null;
+      // Just asked for one and it hasn't started recording yet: give it 4 minutes.
+      if (want.asked && Date.now() - Date.parse(want.requestedAt) < 4 * 60_000) {
+        active++;
+        continue;
+      }
+      // Asked before and it never started: that's a try used up.
+      if (want.asked) {
+        want.tries[want.asked] = (want.tries[want.asked] ?? 0) + 1;
+        if (want.tries[want.asked] >= 3) {
+          want.skipped = [...new Set([...(want.skipped ?? []), want.asked])];
+          console.log(`${title} S${want.asked.replace('|', 'E')} wouldn't play after 3 tries; skipping it`);
+        }
+      }
+      // Not one being recorded right now (here or in another room).
+      const next = p.missing.find(([s, e]) => !p.going.has(`${s}|${e}`) && !want.skipped.includes(`${s}|${e}`));
+      if (!next) continue;
+      const [season, episode] = next;
+      try {
+        want.room ??= await freeVcrRoom(); // its own room; a new request there replaces what it was playing
+        if (!want.room) continue;
+        const run = await vcr('/replay', { title, season, episode, room: want.room });
+        if (run.status !== 200) throw new Error(run.body.error ?? `VCR said ${run.status}`);
+        Object.assign(want, { asked: `${season}|${episode}`, requestedAt: new Date().toISOString() });
+        console.log(`Whole show: ${title} S${season}E${episode} in room ${want.room}`);
+        active++;
+      } catch (err) {
+        console.error(`Whole show ${title}: couldn't request S${season}E${episode}: ${err.message}`);
+      }
+    }
+    saveWhole();
+  } finally {
+    wholeTicking = false;
+  }
+}
+setInterval(() => wholeShowTick().catch((err) => console.error(err)), 30_000).unref?.();
 
 // ---------------------------------------------------------------------------
 // Storage: what's taking up the SD card, biggest first, with Compress and Delete.
