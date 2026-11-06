@@ -1226,6 +1226,48 @@ async function wholeShowTick() {
 }
 setInterval(() => wholeShowTick().catch((err) => console.error(err)), 30_000).unref?.();
 
+// Watchdog for the rooms recording a whole show, since nobody is watching them: the site's
+// player sometimes pauses itself or freezes, and the VCR takes a pause as someone's choice.
+// Not moving for 90 seconds: Play is pressed. Still not moving after 5 minutes (or loading
+// for 8): the episode is played again from the start in the same room.
+const roomWatch = new Map(); // room -> { at, since, pressed, key }
+async function wholeShowWatchdog() {
+  if (!Object.keys(wholeShows).length) return;
+  const { status, body } = await vcr('/rooms');
+  if (status !== 200) return;
+  const now = Date.now();
+  const seen = new Set();
+  for (const r of body.rooms ?? []) {
+    if (!wholeShows[r.title] || r.kind !== 'tv') continue;
+    // At the end of an episode: the room moves on (or the whole-show tick asks for the next).
+    if (r.playback?.duration && r.playback.time >= r.playback.duration - 5) continue;
+    seen.add(r.room);
+    const key = `${r.season}|${r.episode}`;
+    const pos = r.playback && !r.playback.paused ? Math.round(r.playback.time) : null;
+    let w = roomWatch.get(r.room);
+    if (!w || w.key !== key || (pos != null && pos !== w.at)) {
+      w = { at: pos, since: now, pressed: false, key };
+      roomWatch.set(r.room, w);
+      continue;
+    }
+    const still = (now - w.since) / 1000;
+    const where = `${r.title} S${r.season}E${r.episode} in room ${r.room}`;
+    if (r.playback && !w.pressed && still >= 90) {
+      w.pressed = true;
+      const ok = (await vcr('/control', { room: r.room, action: 'play' })).status === 200;
+      console.log(`Watchdog: ${where} wasn't moving for ${Math.round(still)}s; ${ok ? 'pressed Play' : "couldn't press Play"}`);
+    } else if (still >= (r.playback ? 300 : 480) && r.season && r.episode) {
+      roomWatch.delete(r.room);
+      const run = await vcr('/replay', { title: r.title, season: Number(r.season), episode: Number(r.episode),
+        room: r.room, url: showCatalog()[r.title]?.url });
+      console.log(`Watchdog: ${where} stuck for ${Math.round(still / 60)} min; `
+        + (run.status === 200 ? 'playing it again from the start' : `couldn't play it again: ${run.body.error ?? run.status}`));
+    }
+  }
+  for (const room of roomWatch.keys()) if (!seen.has(room)) roomWatch.delete(room);
+}
+setInterval(() => wholeShowWatchdog().catch((err) => console.error(err)), 20_000).unref?.();
+
 // ---------------------------------------------------------------------------
 // Storage: what's taking up the SD card, biggest first, with Compress and Delete.
 
@@ -1454,6 +1496,7 @@ async function restartStuck() {
   }
   for (const [key, play] of plays) {
     if (!play.recording || autoRestarted.has(key)) continue;
+    if (wholeShows[play.item.title]) continue; // the whole-show watchdog looks after these, in their own room
     const started = new Date(`${play.item.date}T${play.item.time}`).getTime(); // when the log says it started
     const recorded = (Date.now() - started) / 1000 - play.paused;
     if (!(recorded > LIMITS[play.item.kind])) continue;
