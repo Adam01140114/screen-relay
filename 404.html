@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Recordings</title>
+<script>
+  // This page only forwards to the Recordings app (its passcode is asked for there). A deeper link
+  // carries over: …github.io/screen-relay/watch/abc opens …/watch/abc in the app.
+  var TARGET = "https://platnms-mac-mini.tail7f705f.ts.net";
+  var rest = location.pathname.replace(/^\/screen-relay/, "").replace(/\/index\.html$/, "/") || "/";
+  location.replace(TARGET + rest + location.search + location.hash);
+</script>
+<meta http-equiv="refresh" content="1; url=https://platnms-mac-mini.tail7f705f.ts.net/">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box;
+         background: #0a0b0f; color: #f2f3f7; font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: center; }
+  a { color: #ffb547; }
+</style>
+</head>
+<body>
+  <p>Opening Recordings…<br><a href="https://platnms-mac-mini.tail7f705f.ts.net/">Tap here</a> if it doesn't open.</p>
+</body>
+</html>
