@@ -485,12 +485,14 @@ function removeDuplicates() {
     if (list.length < 2 || busy.has(key)) continue;
     const plays = new Set(list.map(({ name }) => playOf(name)));
     if (plays.size < list.length) continue; // a play still in parts: joined first
-    const [keep, ...extra] = list.sort((a, b) => (b.meta.duration ?? 0) - (a.meta.duration ?? 0));
+    // A whole one over one marked incomplete (it broke off partway, e.g. black after), however long.
+    const [keep, ...extra] = list.sort((a, b) => Boolean(a.meta.incomplete) - Boolean(b.meta.incomplete)
+      || (b.meta.duration ?? 0) - (a.meta.duration ?? 0));
     for (const { name, meta } of extra) {
       const results = [meta.file, name].filter(Boolean).map((file) => discard(path.join(opts.out, file)));
       const how = results.includes('deleted') ? 'deleted (the Trash wasn\'t available)' : 'moved to the Trash';
       log(`🗑 Removed "${name.slice(0, -'.json'.length)}" (${formatDuration((meta.duration ?? 0) * 1000)}): `
-        + `"${keep.name.slice(0, -'.json'.length)}" is a longer recording of it (${how})`);
+        + `"${keep.name.slice(0, -'.json'.length)}" is a better recording of it (${how})`);
     }
   }
 }
