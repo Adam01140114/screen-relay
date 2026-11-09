@@ -492,9 +492,9 @@
   html.simple .wp-shade { background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.25) 35%, rgba(0,0,0,.25) 65%, rgba(0,0,0,.7)); }
   /* ===== VCR (html.requests) ===== */
   html.requests h1::before { content: "VCR"; }
-  /* View Recordings: on the VCR only (the Recordings app on this Mac). */
-  .view-recordings { display: none; }
-  html.requests .view-recordings { display: block; margin: 12px 0 0; padding: 12px; border: 0; border-radius: 6px;
+  /* Open Media Hub: on the VCR only (the Media Hub on this Mac). */
+  .open-media-hub { display: none; }
+  html.requests .open-media-hub { display: block; margin: 12px 0 0; padding: 12px; border: 0; border-radius: 6px;
     background: #2a2a2a; color: #fff; font-size: 16px; font-weight: 700; }
   .rq-rec { padding: 6px 10px; border: 0; border-radius: 6px; background: #e50914; color: #fff; font-size: 12px; font-weight: 700; }
   .rq-rec.part { background: #3a3a3a; }
@@ -611,10 +611,10 @@
     html.requests .rq-actions { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; min-width: 0; }
     html.requests .rq-actions .rq-end { margin-top: 0; }
   }
-  /* View Recordings and the History filter: outlined so they stand out from the cards. */
-  html.requests .view-recordings { background: transparent !important; border: 1px solid rgba(255,255,255,.35) !important; color: #fff;
+  /* Open Media Hub and the History filter: outlined so they stand out from the cards. */
+  html.requests .open-media-hub { background: transparent !important; border: 1px solid rgba(255,255,255,.35) !important; color: #fff;
     border-radius: 8px !important; }
-  html.requests .view-recordings:hover { background: rgba(255,255,255,.08) !important; }
+  html.requests .open-media-hub:hover { background: rgba(255,255,255,.08) !important; }
   html.requests .rq-filter button { border: 1px solid rgba(255,255,255,.3); background: transparent; color: #e6e6e6; padding: 7px 14px; }
   html.requests .rq-filter button.on { background: #fff; border-color: #fff; color: #111; }
 </style>
@@ -692,7 +692,7 @@
   <button id="runcmd" class="wide run">Run command</button>
   </div>
   <button id="view-vcr" class="wide view-vcr">View VCR</button>
-  <button id="view-recordings" class="wide view-recordings">View Recordings</button>
+  <button id="open-media-hub" class="wide open-media-hub">Open Media Hub</button>
   <section class="rq rq-card" id="rq" aria-label="Playing now">
     <h2>Playing now <span class="rq-count" id="rq-count" hidden></span></h2>
     <p class="hint">Each request plays in a room of its own, so several can play at once. Watch opens that room's screen.</p>
@@ -1594,16 +1594,16 @@
   }
   // Delete: an episode, or a show with all its episodes (as the filter shows them), out of the
   // watch log and its copies for good.
-  // Watch Content: the recording of that episode (its mp4) from the Recordings app.
+  // Watch Content: the recording of that episode (its mp4) from the Media Hub.
   $("rq-done-list").addEventListener("click", e => {
     const b = e.target.closest(".rq-rec");
     if (!b) return;
     e.preventDefault();
     window.open(b.dataset.url, "_blank", "noopener");
   });
-  // View Recordings: the Recordings app by the same route this page came: Tailscale's HTTPS
+  // Open Media Hub: the Media Hub by the same route this page came: Tailscale's HTTPS
   // link when opened through Tailscale, this Mac's own address here, otherwise the Wi-Fi.
-  $("view-recordings").addEventListener("click", () => {
+  $("open-media-hub").addEventListener("click", () => {
     const host = location.hostname;
     location.href = host.endsWith(".ts.net") ? `https://${host}/`
       : ["localhost", "127.0.0.1"].includes(host) ? "http://localhost:7777/"
@@ -2561,7 +2561,7 @@
     const recording = (pickShownItems[+card.dataset.index] || {}).recording;
     if (recording) {
       // Already recorded: play the recording instead of streaming it from the site again. The run
-      // that asked is ended (nothing was logged yet), and the recording opens in Recordings.
+      // that asked is ended (nothing was logged yet), and the recording opens in the Media Hub.
       const opened = window.open(recording, "_blank");
       $("pick-dialog").close();
       const args = currentArgs || [], at = args.indexOf("--share-room");
